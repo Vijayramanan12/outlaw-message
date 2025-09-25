@@ -1,0 +1,23 @@
+[project]
+name = "python-template"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=45.0.6",
+    "flask>=3.1.2",
+    "flask-socketio>=5.5.1",
+    "flask-sqlalchemy>=3.1.1",
+    "librosa>=0.11.0",
+    "numpy>=2.2.6",
+    "pillow>=11.3.0",
+    "pydub>=0.25.1",
+    "python-socketio>=5.13.0",
+    "pytz>=2025.2",
+    "requests>=2.32.5",
+    "scikit-learn>=1.7.1",
+    "scipy>=1.16.1",
+    "speechrecognition>=3.14.3",
+    "werkzeug>=3.1.3",
+]

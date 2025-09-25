@@ -1,0 +1,349 @@
+
+{% extends "base.html" %}
+
+{% block title %}Secret Image Messages - Outlaw Telegraph{% endblock %}
+
+{% block content %}
+    <div class="container p-4" style="background-image: url('https://dxofwxhpj.blob.core.windows.net/rockstar-games-red-dead-redemption-2-wallpaper.html'); background-size: cover; background-position: center;">
+
+    </div>
+    <div class="text-center mb-4">
+        <h2><i class="fas fa-eye-slash me-2"></i>Secret Image Messages</h2>
+        <p class="text-muted">Hide and reveal secret messages in images</p>
+    </div>
+    
+    <div class="row">
+        <!-- Encode Section -->
+        <div class="col-md-6 mb-4">
+            <div class="western-card p-4">
+                <h4 class="mb-3"><i class="fas fa-lock me-2"></i>Hide Message in Image</h4>
+                
+                <form id="encodeForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="encodeImage" class="form-label">Select Image</label>
+                        <input type="file" class="form-control" id="encodeImage" name="image_file" 
+                               accept=".png,.jpg,.jpeg,.bmp" required>
+                        <small class="text-muted">Supported: PNG, JPG, JPEG, BMP</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="secretMessage" class="form-label">Secret Message</label>
+                        <textarea class="form-control" id="secretMessage" name="secret_message" 
+                                rows="4" placeholder="Enter your secret message here..." required></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-magic me-2"></i>Hide Message
+                    </button>
+                </form>
+                
+                <div id="encodeResult" class="mt-3"></div>
+                
+                <!-- Chat Integration Modal -->
+                <div class="modal fade" id="sendStegoModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="fas fa-paper-plane me-2"></i>Send Hidden Message</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="text-muted">Choose who to send this image with hidden message:</p>
+                                <div id="chatMembersList" class="list-group">
+                                    <!-- Chat members will be loaded here -->
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" id="sendStegoBtn" disabled>
+                                    <i class="fas fa-paper-plane me-1"></i>Send Message
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Decode Section -->
+        <div class="col-md-6 mb-4">
+            <div class="western-card p-4">
+                <h4 class="mb-3"><i class="fas fa-unlock me-2"></i>Reveal Hidden Message</h4>
+                
+                <form id="decodeForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="decodeImage" class="form-label">Select Stego Image</label>
+                        <input type="file" class="form-control" id="decodeImage" name="image_file" 
+                               accept=".png,.jpg,.jpeg,.bmp" required>
+                        <small class="text-muted">Upload an image with hidden message</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-search me-2"></i>Reveal Message
+                    </button>
+                </form>
+                
+                <div id="decodeResult" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="western-card p-4">
+                <h5><i class="fas fa-info-circle me-2"></i>How it Works</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Encoding (Hiding):</h6>
+                        <ul>
+                            <li>Upload an image and type your secret message</li>
+                            <li>The message is converted to binary</li>
+                            <li>Binary bits are hidden in the least significant bits of image pixels</li>
+                            <li>Download the modified image with hidden message</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Decoding (Revealing):</h6>
+                        <ul>
+                            <li>Upload an image containing a hidden message</li>
+                            <li>The system extracts the least significant bits</li>
+                            <li>Binary data is converted back to text</li>
+                            <li>The hidden message is revealed</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Back to Chat
+        </a>
+    </div>
+</div>
+
+<script>
+let currentStegoImageUrl = null;
+let selectedChatRoom = null;
+
+// Load chat rooms for sending stego images
+async function loadChatRooms() {
+    try {
+        const response = await fetch('/api/rooms');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const rooms = await response.json();
+        
+        const chatMembersList = document.getElementById('chatMembersList');
+        chatMembersList.innerHTML = '';
+        
+        if (rooms.length === 0) {
+            chatMembersList.innerHTML = '<div class="text-center text-muted p-3">No chat rooms available. Start a chat first!</div>';
+            return;
+        }
+        
+        rooms.forEach(room => {
+            const roomItem = document.createElement('div');
+            roomItem.className = 'list-group-item list-group-item-action';
+            roomItem.style.cursor = 'pointer';
+            roomItem.dataset.roomId = room.id;
+            
+            const memberNames = room.members.map(m => m.username).join(', ');
+            const displayName = room.is_group ? room.name : memberNames.replace(/,.*/, '');
+            
+            roomItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">${displayName}</h6>
+                        <small class="text-muted">${room.is_group ? 'Group Chat' : 'Private Chat'}</small>
+                    </div>
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            `;
+            
+            roomItem.addEventListener('click', () => {
+                // Remove previous selection
+                document.querySelectorAll('#chatMembersList .list-group-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                // Add selection to current item
+                roomItem.classList.add('active');
+                selectedChatRoom = room.id;
+                document.getElementById('sendStegoBtn').disabled = false;
+            });
+            
+            chatMembersList.appendChild(roomItem);
+        });
+    } catch (error) {
+        console.error('Error loading chat rooms:', error);
+        document.getElementById('chatMembersList').innerHTML = 
+            '<div class="text-center text-muted p-3">Error loading chats. Please refresh.</div>';
+    }
+}
+
+// Encode form handler
+document.getElementById('encodeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    const imageFile = document.getElementById('encodeImage').files[0];
+    const message = document.getElementById('secretMessage').value;
+    
+    if (!imageFile || !message.trim()) {
+        document.getElementById('encodeResult').innerHTML = 
+            '<div class="alert alert-danger">Please select an image and enter a message</div>';
+        return;
+    }
+    
+    formData.append('image_file', imageFile);
+    formData.append('secret_message', message);
+    
+    document.getElementById('encodeResult').innerHTML = 
+        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Hiding message...</div>';
+    
+    try {
+        const response = await fetch('/encode_image', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            currentStegoImageUrl = data.download_url;
+            document.getElementById('encodeResult').innerHTML = 
+                `<div class="alert alert-success">
+                    <i class="fas fa-check me-2"></i>${data.message}
+                    <div class="mt-3">
+                        <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#sendStegoModal">
+                            <i class="fas fa-paper-plane me-1"></i>Send to Chat
+                        </button>
+                        <a href="${data.download_url}" class="btn btn-outline-success">
+                            <i class="fas fa-download me-1"></i>Download Only
+                        </a>
+                    </div>
+                </div>`;
+            document.getElementById('encodeForm').reset();
+            
+            // Load chat rooms when modal is shown
+            document.getElementById('sendStegoModal').addEventListener('show.bs.modal', loadChatRooms);
+        } else {
+            document.getElementById('encodeResult').innerHTML = 
+                `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${data.error}</div>`;
+        }
+    } catch (error) {
+        document.getElementById('encodeResult').innerHTML = 
+            '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error encoding message</div>';
+    }
+});
+
+// Send stego image to selected chat
+document.getElementById('sendStegoBtn').addEventListener('click', async function() {
+    if (!selectedChatRoom || !currentStegoImageUrl) {
+        alert('Please select a chat room');
+        return;
+    }
+    
+    // Disable button to prevent double-clicks
+    const sendBtn = this;
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
+    
+    try {
+        // Extract filename from the download URL
+        const stegoFilename = currentStegoImageUrl.split('/').pop();
+        
+        // Send directly using the server-side endpoint
+        const response = await fetch('/api/send_stego_to_chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                stego_filename: stegoFilename,
+                room_id: selectedChatRoom
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Close modal and show success
+            const modal = bootstrap.Modal.getInstance(document.getElementById('sendStegoModal'));
+            modal.hide();
+            
+            document.getElementById('encodeResult').innerHTML = 
+                '<div class="alert alert-success"><i class="fas fa-check me-2"></i>Hidden message sent successfully! The recipient can decode it to reveal your secret message.</div>';
+            
+            // Reset selections
+            selectedChatRoom = null;
+            currentStegoImageUrl = null;
+            
+            // Optionally redirect to chat
+            setTimeout(() => {
+                if (confirm('Would you like to go to the chat to see your message?')) {
+                    window.location.href = '/';
+                }
+            }, 1500);
+        } else {
+            alert('Error sending image: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error sending stego image:', error);
+        alert('Error sending image to chat');
+    } finally {
+        // Re-enable button
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Send Message';
+    }
+});
+
+// Decode form handler
+document.getElementById('decodeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    const imageFile = document.getElementById('decodeImage').files[0];
+    
+    if (!imageFile) {
+        document.getElementById('decodeResult').innerHTML = 
+            '<div class="alert alert-danger">Please select an image</div>';
+        return;
+    }
+    
+    formData.append('image_file', imageFile);
+    
+    document.getElementById('decodeResult').innerHTML = 
+        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Revealing message...</div>';
+    
+    try {
+        const response = await fetch('/decode_image', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('decodeResult').innerHTML = 
+                `<div class="alert alert-success">
+                    <h6><i class="fas fa-eye me-2"></i>Hidden Message:</h6>
+                    <div class="p-3 bg-light rounded">
+                        <pre class="mb-0">${data.hidden_message}</pre>
+                    </div>
+                </div>`;
+        } else {
+            document.getElementById('decodeResult').innerHTML = 
+                `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${data.error}</div>`;
+        }
+        
+        document.getElementById('decodeForm').reset();
+    } catch (error) {
+        document.getElementById('decodeResult').innerHTML = 
+            '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error decoding message</div>';
+    }
+});
+</script>
+{% endblock %}

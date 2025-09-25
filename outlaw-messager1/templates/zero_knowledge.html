@@ -1,0 +1,292 @@
+
+{% extends "base.html" %}
+
+{% block title %}Zero-Knowledge Encryption - Outlaw Telegraph{% endblock %}
+
+{% block content %}
+<div class="container p-4">
+    <div class="text-center mb-4">
+        <h2><i class="fas fa-shield-alt me-2"></i>Zero-Knowledge Encryption</h2>
+        <p class="text-muted">End-to-end encryption where even the server cannot read your messages</p>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="western-card p-4">
+                <h4 class="mb-3"><i class="fas fa-key me-2"></i>Encryption Status</h4>
+                
+                <div id="encryptionStatus" class="mb-4">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Initializing Zero-Knowledge encryption system...
+                    </div>
+                </div>
+                
+                <div id="keyInfo" class="mb-4" style="display: none;">
+                    <h5>Your Encryption Keys:</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Public Key (shareable):</label>
+                            <textarea id="publicKeyDisplay" class="form-control" rows="4" readonly></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Private Key (keep secret):</label>
+                            <textarea id="privateKeyDisplay" class="form-control" rows="4" readonly></textarea>
+                            <small class="text-muted">This key is stored only in your browser</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h5>Test Encryption:</h5>
+                    <div class="input-group mb-3">
+                        <input type="text" id="testMessage" class="form-control" placeholder="Enter test message">
+                        <button class="btn btn-primary" onclick="testEncryption()">
+                            <i class="fas fa-lock me-2"></i>Test Encrypt/Decrypt
+                        </button>
+                    </div>
+                    <div id="encryptionResult"></div>
+                </div>
+                
+                <div class="text-center">
+                    <a href="/" class="btn btn-success">
+                        <i class="fas fa-comments me-2"></i>Start Secure Messaging
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let userKeys = {
+    publicKey: null,
+    privateKey: null
+};
+
+// Initialize Zero-Knowledge system
+document.addEventListener('DOMContentLoaded', function() {
+    initializeZeroKnowledge();
+});
+
+async function initializeZeroKnowledge() {
+    try {
+        // Check if user has keys stored locally
+        const storedPrivateKey = localStorage.getItem('zk_private_key');
+        
+        if (storedPrivateKey) {
+            userKeys.privateKey = storedPrivateKey;
+            
+            // Get public key from server
+            const response = await fetch('/api/get_user_keys');
+            const data = await response.json();
+            
+            if (data.public_key) {
+                userKeys.publicKey = data.public_key;
+                showEncryptionStatus(true);
+                displayKeys();
+            } else {
+                showEncryptionStatus(false, 'Public key not found on server');
+            }
+        } else {
+            showEncryptionStatus(false, 'No private key found. Please re-register or login again.');
+        }
+    } catch (error) {
+        showEncryptionStatus(false, 'Error initializing encryption: ' + error.message);
+    }
+}
+
+function showEncryptionStatus(success, message = null) {
+    const statusDiv = document.getElementById('encryptionStatus');
+    
+    if (success) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle me-2"></i>
+                Zero-Knowledge encryption is active. Your messages are secure!
+            </div>`;
+    } else {
+        statusDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                ${message || 'Encryption system not ready'}
+            </div>`;
+    }
+}
+
+function displayKeys() {
+    document.getElementById('keyInfo').style.display = 'block';
+    document.getElementById('publicKeyDisplay').value = userKeys.publicKey;
+    document.getElementById('privateKeyDisplay').value = userKeys.privateKey.substring(0, 100) + '...';
+}
+
+// RSA Encryption/Decryption using Web Crypto API
+async function encryptMessage(message, publicKeyPem) {
+    try {
+        // Convert PEM to ArrayBuffer
+        const publicKeyData = pemToArrayBuffer(publicKeyPem);
+        
+        // Import the key
+        const publicKey = await window.crypto.subtle.importKey(
+            'spki',
+            publicKeyData,
+            {
+                name: 'RSA-OAEP',
+                hash: 'SHA-256'
+            },
+            false,
+            ['encrypt']
+        );
+        
+        // Encrypt the message
+        const encodedMessage = new TextEncoder().encode(message);
+        const encryptedData = await window.crypto.subtle.encrypt(
+            'RSA-OAEP',
+            publicKey,
+            encodedMessage
+        );
+        
+        // Convert to base64
+        return btoa(String.fromCharCode(...new Uint8Array(encryptedData)));
+    } catch (error) {
+        console.error('Encryption error:', error);
+        throw error;
+    }
+}
+
+async function decryptMessage(encryptedMessage, privateKeyPem) {
+    try {
+        // Convert PEM to ArrayBuffer
+        const privateKeyData = pemToArrayBuffer(privateKeyPem);
+        
+        // Import the key
+        const privateKey = await window.crypto.subtle.importKey(
+            'pkcs8',
+            privateKeyData,
+            {
+                name: 'RSA-OAEP',
+                hash: 'SHA-256'
+            },
+            false,
+            ['decrypt']
+        );
+        
+        // Decrypt the message
+        const encryptedData = Uint8Array.from(atob(encryptedMessage), c => c.charCodeAt(0));
+        const decryptedData = await window.crypto.subtle.decrypt(
+            'RSA-OAEP',
+            privateKey,
+            encryptedData
+        );
+        
+        return new TextDecoder().decode(decryptedData);
+    } catch (error) {
+        console.error('Decryption error:', error);
+        throw error;
+    }
+}
+
+function pemToArrayBuffer(pem) {
+    const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+}
+
+async function testEncryption() {
+    const message = document.getElementById('testMessage').value;
+    if (!message) {
+        alert('Please enter a test message');
+        return;
+    }
+    
+    if (!userKeys.publicKey || !userKeys.privateKey) {
+        alert('Encryption keys not available');
+        return;
+    }
+    
+    try {
+        // Encrypt with public key
+        const encrypted = await encryptMessage(message, userKeys.publicKey);
+        
+        // Decrypt with private key
+        const decrypted = await decryptMessage(encrypted, userKeys.privateKey);
+        
+        document.getElementById('encryptionResult').innerHTML = `
+            <div class="alert alert-success">
+                <h6>Encryption Test Results:</h6>
+                <p><strong>Original:</strong> ${message}</p>
+                <p><strong>Encrypted:</strong> ${encrypted.substring(0, 50)}...</p>
+                <p><strong>Decrypted:</strong> ${decrypted}</p>
+                <p><strong>Test:</strong> ${message === decrypted ? '✅ PASSED' : '❌ FAILED'}</p>
+            </div>`;
+    } catch (error) {
+        document.getElementById('encryptionResult').innerHTML = `
+            <div class="alert alert-danger">
+                <strong>Encryption Test Failed:</strong> ${error.message}
+            </div>`;
+    }
+}
+
+// Store private key when user registers
+function storePrivateKey(privateKey) {
+    localStorage.setItem('zk_private_key', privateKey);
+}
+
+// Enhanced registration to handle zero-knowledge keys
+if (window.location.pathname === '/register') {
+    const originalRegisterForm = document.querySelector('form');
+    if (originalRegisterForm) {
+        originalRegisterForm.addEventListener('submit', async function(e) {
+            const formData = new FormData(this);
+            
+            // After successful registration, store the private key
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.private_key) {
+                    storePrivateKey(result.private_key);
+                    alert('Registration successful! Your encryption keys have been generated.');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+            }
+        });
+    }
+}
+</script>
+
+<style>
+.western-card {
+    background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+    border: 3px solid #654321;
+    border-radius: 15px;
+    color: #F5DEB3;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
+
+.western-card h4, .western-card h5 {
+    color: #FFD700;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+
+.form-control {
+    background-color: #F5DEB3;
+    border: 2px solid #8B4513;
+    color: #654321;
+}
+
+.btn-primary {
+    background-color: #DC143C;
+    border-color: #B22222;
+}
+
+.btn-success {
+    background-color: #228B22;
+    border-color: #006400;
+}
+</style>
+{% endblock %}

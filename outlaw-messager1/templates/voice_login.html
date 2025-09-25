@@ -1,0 +1,342 @@
+
+{% extends "base.html" %}
+
+{% block title %}Voice Authentication - Outlaw Telegraph{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center min-vh-100">
+    <div class="western-decoration" style="top: 10%; left: 15%; font-size: 3rem;">🎤</div>
+    <div class="western-decoration" style="top: 15%; right: 10%; font-size: 2.5rem;">🔊</div>
+    <div class="western-decoration" style="bottom: 10%; left: 10%; font-size: 3rem;">🤠</div>
+
+    <div class="western-card p-5" style="width: 100%; max-width: 500px;">
+        <div class="text-center mb-4">
+            <h2 class="mb-3"><i class="fas fa-microphone me-2"></i>Voice Authentication</h2>
+            <p class="text-green" style="color: #FF0000;">Secure dual verification: voice pattern + speech recognition</p>
+        </div>
+
+        <!-- Step 1: Username Entry -->
+        <div id="step1" class="mb-4">
+            <div class="mb-3">
+                <label for="username" class="form-label" style="color: #DC143C;">Outlaw Name</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+            </div>
+            <button type="button" id="getChallengeBtn" class="btn btn-primary w-100">
+                <i class="fas fa-key me-2"></i>Get Challenge Phrase
+            </button>
+        </div>
+
+        <!-- Step 2: Challenge Phrase Display -->
+        <div id="step2" class="mb-4" style="display: none;">
+            <div class="alert alert-warning">
+                <h6><i class="fas fa-exclamation-triangle me-2"></i>Voice Challenge</h6>
+                <p class="mb-2"><strong>For verification, please say the following sentence out loud:</strong></p>
+                <div id="challengePhrase" class="p-3 bg-light border rounded text-center" style="font-size: 1.1em; font-weight: bold; color: #333;"></div>
+            </div>
+        </div>
+
+        <!-- Step 3: Live Voice Recording -->
+        <div id="step3" style="display: none;">
+            <div class="mb-4">
+                <div class="text-center mb-3">
+                    <div class="recording-status mb-3">
+                        <div id="micStatus" class="alert alert-info">
+                            <i class="fas fa-microphone me-2"></i>Click "Start Recording" and speak the challenge phrase clearly
+                        </div>
+                    </div>
+                    
+                    <!-- Recording Controls -->
+                    <div class="recording-controls">
+                        <button type="button" id="startRecording" class="btn btn-primary me-2">
+                            <i class="fas fa-microphone me-2"></i>Start Recording
+                        </button>
+                        <button type="button" id="stopRecording" class="btn btn-danger me-2" disabled>
+                            <i class="fas fa-stop me-2"></i>Stop Recording
+                        </button>
+                        <button type="button" id="playRecording" class="btn btn-secondary" disabled>
+                            <i class="fas fa-play me-2"></i>Play Back
+                        </button>
+                    </div>
+                    
+                    <!-- Audio Visualization -->
+                    <div class="mt-3">
+                        <canvas id="audioVisualizer" width="400" height="100" style="border: 1px solid #ccc; border-radius: 5px;"></canvas>
+                    </div>
+                    
+                    <!-- Recorded Audio Player -->
+                    <audio id="audioPlayer" class="mt-3" style="display: none;" controls></audio>
+                </div>
+                
+                <button type="button" id="submitRecording" class="btn btn-success w-100 mb-3" disabled>
+                    <i class="fas fa-shield-alt me-2"></i>Verify Voice Authentication
+                </button>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <p style="color: #DC143C;">
+                Traditional login? <a href="/login" class="text-decoration-none" style="color: var(--gold-dust);">Use password</a>
+            </p>
+            <p style="color: #DC143C;">
+                New outlaw? <a href="/register" class="text-decoration-none" style="color: var(--gold-dust);">Join the gang</a>
+            </p>
+        </div>
+
+        <div id="message" class="mt-3"></div>
+    </div>
+</div>
+
+<script>
+// Step 1: Get challenge phrase
+document.getElementById('getChallengeBtn').addEventListener('click', async function() {
+    const username = document.getElementById('username').value;
+    
+    if (!username) {
+        document.getElementById('message').innerHTML = 
+            '<div class="alert alert-danger">Please enter your username first</div>';
+        return;
+    }
+    
+    document.getElementById('message').innerHTML = 
+        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Generating challenge phrase...</div>';
+    
+    try {
+        const response = await fetch('/api/get_challenge_phrase', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username: username })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('challengePhrase').textContent = data.challenge_phrase;
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+            document.getElementById('step3').style.display = 'block';
+            document.getElementById('message').innerHTML = 
+                `<div class="alert alert-success"><i class="fas fa-check me-2"></i>${data.message}</div>`;
+        } else {
+            document.getElementById('message').innerHTML = 
+                `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${data.message}</div>`;
+        }
+    } catch (error) {
+        document.getElementById('message').innerHTML = 
+            '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Failed to get challenge phrase</div>';
+    }
+});
+
+// Live Recording Variables
+let mediaRecorder;
+let audioChunks = [];
+let audioBlob = null;
+let audioContext;
+let analyser;
+let microphone;
+let animationId;
+
+// Audio visualization
+function drawAudioVisualization() {
+    if (!analyser) return;
+    
+    const canvas = document.getElementById('audioVisualizer');
+    const canvasContext = canvas.getContext('2d');
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    analyser.getByteFrequencyData(dataArray);
+    
+    canvasContext.fillStyle = 'rgb(240, 240, 240)';
+    canvasContext.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const barWidth = (canvas.width / bufferLength) * 2.5;
+    let barHeight;
+    let x = 0;
+    
+    for (let i = 0; i < bufferLength; i++) {
+        barHeight = dataArray[i] / 2;
+        
+        canvasContext.fillStyle = `rgb(${barHeight + 100}, 50, 50)`;
+        canvasContext.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+    }
+    
+    animationId = requestAnimationFrame(drawAudioVisualization);
+}
+
+// Start Recording
+document.getElementById('startRecording').addEventListener('click', async function() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Setup audio context for visualization
+        audioContext = new AudioContext();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        analyser.fftSize = 256;
+        
+        // Setup media recorder with better browser compatibility
+        let options = {};
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            options = { mimeType: 'audio/ogg' };
+        }
+        
+        mediaRecorder = new MediaRecorder(stream, options);
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = function(event) {
+            audioChunks.push(event.data);
+        };
+        
+        mediaRecorder.onstop = function() {
+            // Clean up previous audio if exists
+            const audioPlayer = document.getElementById('audioPlayer');
+            if (audioPlayer.src) {
+                URL.revokeObjectURL(audioPlayer.src);
+            }
+            
+            // Create new audio blob - use the MediaRecorder's mimeType or fallback
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            audioBlob = new Blob(audioChunks, { type: mimeType });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            // Set up audio player
+            audioPlayer.src = audioUrl;
+            audioPlayer.style.display = 'block';
+            audioPlayer.load(); // Ensure audio is loaded
+            
+            // Wait for audio to be ready before enabling buttons
+            audioPlayer.addEventListener('canplaythrough', function() {
+                document.getElementById('playRecording').disabled = false;
+                document.getElementById('submitRecording').disabled = false;
+            }, { once: true });
+            
+            // Fallback in case canplaythrough doesn't fire
+            setTimeout(() => {
+                document.getElementById('playRecording').disabled = false;
+                document.getElementById('submitRecording').disabled = false;
+            }, 1000);
+            
+            // Stop visualization
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        };
+        
+        mediaRecorder.start();
+        
+        // Update UI
+        document.getElementById('startRecording').disabled = true;
+        document.getElementById('stopRecording').disabled = false;
+        document.getElementById('micStatus').innerHTML = 
+            '<i class="fas fa-circle text-danger me-2"></i>Recording... Speak the challenge phrase now';
+        document.getElementById('micStatus').className = 'alert alert-danger';
+        
+        // Start visualization
+        drawAudioVisualization();
+        
+    } catch (error) {
+        document.getElementById('message').innerHTML = 
+            '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Microphone access denied or not available</div>';
+    }
+});
+
+// Stop Recording
+document.getElementById('stopRecording').addEventListener('click', function() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        
+        // Stop all tracks
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        // Update UI
+        document.getElementById('startRecording').disabled = false;
+        document.getElementById('stopRecording').disabled = true;
+        document.getElementById('micStatus').innerHTML = 
+            '<i class="fas fa-check text-success me-2"></i>Recording completed! You can play it back or submit for verification';
+        document.getElementById('micStatus').className = 'alert alert-success';
+    }
+});
+
+// Play Recording
+document.getElementById('playRecording').addEventListener('click', function() {
+    const audioPlayer = document.getElementById('audioPlayer');
+    const playBtn = document.getElementById('playRecording');
+    
+    if (audioPlayer.paused) {
+        audioPlayer.play().then(() => {
+            playBtn.innerHTML = '<i class="fas fa-pause me-2"></i>Pause';
+        }).catch(error => {
+            console.error('Error playing audio:', error);
+            document.getElementById('message').innerHTML = 
+                '<div class="alert alert-warning">Unable to play audio. Your recording is still valid for submission.</div>';
+        });
+    } else {
+        audioPlayer.pause();
+        playBtn.innerHTML = '<i class="fas fa-play me-2"></i>Play Back';
+    }
+});
+
+// Reset play button when audio ends
+document.getElementById('audioPlayer').addEventListener('ended', function() {
+    document.getElementById('playRecording').innerHTML = '<i class="fas fa-play me-2"></i>Play Back';
+});
+
+// Submit Recording for Authentication
+document.getElementById('submitRecording').addEventListener('click', async function() {
+    if (!audioBlob) {
+        document.getElementById('message').innerHTML = 
+            '<div class="alert alert-danger">Please record your voice first</div>';
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('voice_file', audioBlob, 'voice_recording.wav');
+    
+    document.getElementById('message').innerHTML = 
+        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Performing dual verification (voice + text)...</div>';
+    
+    try {
+        const response = await fetch('/voice_login', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('message').innerHTML = 
+                `<div class="alert alert-success"><i class="fas fa-check me-2"></i>${data.message}</div>`;
+            setTimeout(() => {
+                window.location.href = data.redirect;
+            }, 2000);
+        } else {
+            document.getElementById('message').innerHTML = 
+                `<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>${data.message}</div>`;
+            // Reset to allow retry
+            document.getElementById('step1').style.display = 'block';
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step3').style.display = 'none';
+            // Reset recording state
+            audioBlob = null;
+            document.getElementById('audioPlayer').style.display = 'none';
+            document.getElementById('playRecording').disabled = true;
+            document.getElementById('submitRecording').disabled = true;
+            document.getElementById('startRecording').disabled = false;
+            document.getElementById('stopRecording').disabled = true;
+        }
+    } catch (error) {
+        document.getElementById('message').innerHTML = 
+            '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>Voice authentication failed</div>';
+    }
+});
+</script>
+{% endblock %}

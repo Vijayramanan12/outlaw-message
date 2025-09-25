@@ -1,0 +1,24 @@
+User Enrollment (One-Time Setup)
+1. Voice Sample Upload:
+• Prompt the new user: "To set up voice login, please upload a clear audio recording of yourself speaking for at least 15 seconds. An MP3 file is acceptable for this initial setup."
+2. Audio Conversion & Voiceprint Creation:
+• Crucial Step: Upon upload, immediately convert the user's MP3 file into a high-quality WAV format.
+• Technical Specification: The target format must be 16-bit PCM, 16,000 Hz, mono channel. This lossless format is the industry standard for creating an accurate biometric voice model.
+• From the converted WAV file, extract a unique voiceprint (a mathematical model of the user's voice).
+• Securely store this voiceprint and associate it with the user's account. Discard the original audio file.
+Phase 2: Live Authentication (Login Process)
+1. Initiate Login:
+• When the user attempts to log in via voice, the system will trigger the live verification process.
+2. Generate and Display Challenge Phrase:
+• Randomly select a short, unpredictable sentence from a predefined list (e.g., "The quick brown fox jumps over the lazy dog," "My voice is my password," "Unlock my account now").
+• Display this phrase clearly on the screen with the instruction: "For verification, please say the following sentence out loud:"
+3. Live Voice Capture:
+• Activate the device's microphone and begin capturing audio in real-time.
+• Best Format for Live Capture: Capture the audio directly as raw, uncompressed PCM (LINEAR16) at 16,000 Hz with a mono channel. Do not capture as MP3.
+4. Perform Dual Verification:
+• The system must perform two checks simultaneously on the captured live audio:
+• A. Text Verification (Speech-to-Text): Transcribe the spoken words. Does the transcribed text exactly match the challenge phrase that was displayed on the screen?
+• B. Voiceprint Comparison (Speaker Verification): Compare the biometric characteristics of the live voice against the user's stored voiceprint.
+5. Grant or Deny Access:
+• Access is granted only if BOTH checks pass. The spoken text must match the prompt, AND the voice must match the enrolled voiceprint.
+• If either check fails, display a clear message like, "Verification failed. Please ensure you are in a quiet environment and speak clearly. Try again."

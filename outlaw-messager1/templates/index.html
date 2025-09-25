@@ -1,0 +1,971 @@
+
+{% extends "base.html" %}
+
+{% block title %}Outlaw Telegraph - Secure Messaging{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-3">
+    <!-- Western decorations -->
+    <div class="western-decoration" style="top: 10px; left: 20px;">🤠</div>
+    <div class="western-decoration" style="top: 15px; right: 30px;">⭐</div>
+    <div class="western-decoration" style="bottom: 20px; left: 40px;">🌵</div>
+    
+    <!-- User Header -->
+    <div class="western-card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center">
+                <i class="fas fa-star me-2" style="color: var(--gold-dust);"></i>
+                <h4 class="mb-0"> {{ session.username }}!</h4>
+                <span class="online-indicator ms-2"></span>
+            </div>
+            <div class="d-flex align-items-center">
+                <span class="me-3" style="color: var(--red-dust);">
+                    <i class="fas fa-bell me-1"></i>
+                    <span id="notificationStatus">Notifications: <span id="notificationPermission">Checking...</span></span>
+                </span>
+                <div class="dropdown me-3">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle position-relative" type="button" id="invitationsDropdown" data-bs-toggle="dropdown">
+                        <i class="fas fa-envelope"></i> Invitations
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="invitationCount" style="display: none;">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" id="invitationsList" style="min-width: 300px;">
+                        <li><h6 class="dropdown-header">Chat Invitations</h6></li>
+                        <li><div id="noInvitations" class="dropdown-item-text text-muted text-center">No pending invitations</div></li>
+                    </ul>
+                </div>
+                <a href="/logout" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-horse me-1"></i>Ride Off
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-4 col-lg-3">
+            <div class="western-card chat-container p-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4><i class="fas fa-horse-head me-2"></i>Telegraph Lines</h4>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#newChatModal">
+                                <i class="fas fa-handshake me-2"></i>New Parley
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                                <i class="fas fa-users me-2"></i>Form Gang
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/voice_register">
+                                <i class="fas fa-microphone me-2"></i>Voice Profile
+                            </a></li>
+                            <li><a class="dropdown-item" href="/steganography">
+                                <i class="fas fa-eye-slash me-2"></i>Secret Images
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout">
+                                <i class="fas fa-horse me-2"></i>Ride Off
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div id="chatsList" class="list-group">
+                    <!-- Chat rooms will be loaded here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Chat Area -->
+        <div class="col-md-8 col-lg-9">
+            <div class="western-card chat-container">
+                <div id="chatHeader" class="border-bottom p-3" style="display: none;">
+                    <h5 id="chatTitle"></h5>
+                    <small id="chatMembers" class="text-muted"></small>
+                </div>
+                
+                <div id="messagesContainer" style="height: 60vh; overflow-y: auto; padding: 15px;">
+                    <div class="text-center text-muted" id="selectChatMessage">
+                        <i class="fas fa-horse-head fa-3x mb-3" style="color: var(--gold-dust);"></i>
+                        <p style="font-family: 'Rye', serif; color: var(--gold-dust);">Choose your communication partner, partner</p>
+                    </div>
+                </div>
+                
+                <div id="messageInput" class="border-top p-3" style="display: none;">
+                    <!-- File Upload Area -->
+                    <div id="fileUploadArea" class="mb-3" style="display: none;">
+                        <div class="card border-secondary">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-paperclip me-2"></i>
+                                        <span id="selectedFileName">No file selected</span>
+                                        <span id="fileSize" class="text-muted ms-2"></span>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger" id="cancelFileUpload">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="progress mt-2" id="uploadProgress" style="display: none;">
+                                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col">
+                            <div class="input-group">
+                                <!-- File Upload Input -->
+                                <input type="file" class="d-none" id="fileInput" accept="image/*,.pdf,.doc,.docx,.txt,.mp3,.wav,.mp4,.zip,.rar">
+                                <button class="btn btn-outline-secondary" type="button" id="attachFileBtn" title="Attach File">
+                                    <i class="fas fa-paperclip"></i>
+                                </button>
+                                <input type="text" class="form-control" id="messageText" placeholder="Send word across the frontier..." maxlength="1000">
+                                <select class="form-select" id="selfDestructTime" style="max-width: 180px;">
+                                    <option value="0">Keep Forever</option>
+                                    <option value="1">Burn in 1 minute</option>
+                                    <option value="5">Burn in 5 minutes</option>
+                                    <option value="30">Burn in 30 minutes</option>
+                                    <option value="60">Burn in 1 hour</option>
+                                </select>
+                                <button class="btn btn-primary" type="button" id="sendButton">
+                                    <i class="fas fa-feather-alt"></i> Send
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Chat Modal -->
+<div class="modal fade" id="newChatModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-handshake me-2"></i>Start New Parley</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="usersList" class="list-group">
+                    <!-- Users will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Group Modal -->
+<div class="modal fade" id="createGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-users me-2"></i>Form Your Gang</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="groupName" placeholder="Gang name...">
+                </div>
+                <div id="groupUsersList" class="list-group">
+                    <!-- Users will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Back Down</button>
+                <button type="button" class="btn btn-primary" id="createGroupBtn"><i class="fas fa-star me-1"></i>Form Gang</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const socket = io();
+let currentRoomId = null;
+let currentMessages = [];
+let pendingInvitations = [];
+
+// Load pending invitations
+async function loadPendingInvitations() {
+    try {
+        const response = await fetch('/api/invitations');
+        if (response.ok) {
+            const invitations = await response.json();
+            pendingInvitations = invitations;
+            updateInvitationUI();
+        }
+    } catch (error) {
+        console.error('Error loading invitations:', error);
+    }
+}
+
+// Update invitation UI
+function updateInvitationUI() {
+    const invitationsList = document.getElementById('invitationsList');
+    const invitationCount = document.getElementById('invitationCount');
+    const noInvitations = document.getElementById('noInvitations');
+    
+    // Clear existing invitations (except header and no invitations message)
+    const existingInvitations = invitationsList.querySelectorAll('.invitation-item');
+    existingInvitations.forEach(item => item.remove());
+    
+    if (pendingInvitations.length === 0) {
+        invitationCount.style.display = 'none';
+        noInvitations.style.display = 'block';
+    } else {
+        invitationCount.style.display = 'block';
+        invitationCount.textContent = pendingInvitations.length;
+        noInvitations.style.display = 'none';
+        
+        pendingInvitations.forEach(invitation => {
+            const invitationItem = document.createElement('li');
+            invitationItem.className = 'invitation-item';
+            invitationItem.innerHTML = `
+                <div class="dropdown-item-text">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <strong>${invitation.sender_name}</strong>
+                            <span class="${invitation.is_online ? 'online-indicator' : 'offline-indicator'}"></span>
+                            <br><small class="text-muted">wants to chat with you</small>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success btn-sm" onclick="respondToInvitation(${invitation.id}, 'accept')">
+                            <i class="fas fa-check"></i> Accept
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="respondToInvitation(${invitation.id}, 'reject')">
+                            <i class="fas fa-times"></i> Reject
+                        </button>
+                    </div>
+                </div>
+                <li><hr class="dropdown-divider"></li>
+            `;
+            invitationsList.appendChild(invitationItem);
+        });
+    }
+}
+
+// Respond to invitation
+async function respondToInvitation(invitationId, response) {
+    try {
+        const apiResponse = await fetch(`/api/respond_invitation/${invitationId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ response: response })
+        });
+        
+        if (apiResponse.ok) {
+            const data = await apiResponse.json();
+            
+            // Remove invitation from pending list
+            pendingInvitations = pendingInvitations.filter(inv => inv.id !== invitationId);
+            updateInvitationUI();
+            
+            if (response === 'accept' && data.room_id) {
+                // Reload chats to show the new room
+                await loadChats();
+                
+                // Find the new chat and open it
+                const newChat = document.querySelector(`[data-room-id="${data.room_id}"]`);
+                if (newChat) {
+                    newChat.click();
+                }
+            }
+            
+            alert(response === 'accept' ? 'Invitation accepted!' : 'Invitation rejected');
+        } else {
+            const error = await apiResponse.json();
+            alert(error.error || 'Error responding to invitation');
+        }
+    } catch (error) {
+        console.error('Error responding to invitation:', error);
+        alert('Error responding to invitation');
+    }
+}
+
+// Check and request notification permissions
+function checkNotificationPermission() {
+    if ('Notification' in window) {
+        const permission = Notification.permission;
+        document.getElementById('notificationPermission').textContent = 
+            permission === 'granted' ? 'Enabled' : 
+            permission === 'denied' ? 'Disabled' : 'Click to Enable';
+        
+        if (permission === 'default') {
+            document.getElementById('notificationPermission').style.cursor = 'pointer';
+            document.getElementById('notificationPermission').onclick = requestNotificationPermission;
+        }
+    } else {
+        document.getElementById('notificationPermission').textContent = 'Not Supported';
+    }
+}
+
+function requestNotificationPermission() {
+    if ('Notification' in window) {
+        Notification.requestPermission().then(function(permission) {
+            checkNotificationPermission();
+        });
+    }
+}
+
+function showNotification(title, body, icon = '🤠') {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        // Check if the page is not visible
+        if (document.hidden) {
+            new Notification(title, {
+                body: body,
+                icon: icon,
+                badge: icon,
+                tag: 'outlaw-telegraph',
+                requireInteraction: false,
+                silent: false
+            });
+        }
+    }
+}
+
+// Socket event listeners
+socket.on('connect', function() {
+    console.log('Connected to server');
+    checkNotificationPermission();
+    loadChats();
+    loadPendingInvitations();
+    socket.emit('get_pending_invitations');
+});
+
+socket.on('new_message', function(data) {
+    try {
+        const currentUserId = {{ session.get('user_id', 'null') }};
+        
+        if (data.room_id === currentRoomId) {
+            addMessageToChat(data);
+        }
+        
+        // Always update chat preview for all rooms
+        updateChatPreview(data.room_id, data.content, data.timestamp);
+        
+        // Show notification if message is not from current user
+        if (data.sender_id !== currentUserId) {
+            showNotification(
+                `New message from ${data.sender}`,
+                data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content,
+                '🤠'
+            );
+        }
+    } catch (error) {
+        console.error('Error handling new message:', error);
+    }
+});
+
+socket.on('message_deleted', function(data) {
+    if (data.room_id === currentRoomId) {
+        removeMessageFromChat(data.message_id);
+    }
+});
+
+socket.on('joined_room', function(data) {
+    console.log('Joined room:', data.room_id);
+});
+
+socket.on('message_read', function(data) {
+    // Only update if it's in the current room and not from current user
+    if (data.room_id === currentRoomId) {
+        updateReadIndicator(data.message_id, data.reader_id);
+    }
+});
+
+socket.on('message_status_update', function(data) {
+    if (data.room_id === currentRoomId) {
+        updateMessageStatus(data.message_id, data.status);
+    }
+});
+
+socket.on('chat_invitation', function(data) {
+    showNotification(
+        'New Chat Invitation',
+        data.message,
+        '📨'
+    );
+    loadPendingInvitations();
+});
+
+socket.on('invitation_response', function(data) {
+    showNotification(
+        'Invitation Response',
+        data.message,
+        data.response === 'accept' ? '✅' : '❌'
+    );
+    
+    if (data.response === 'accept' && data.room_id) {
+        loadChats();
+    }
+});
+
+socket.on('pending_invitations', function(data) {
+    pendingInvitations = data;
+    updateInvitationUI();
+});
+
+// Update read indicator
+function updateReadIndicator(messageId, readerId) {
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageElement) {
+        const indicator = messageElement.querySelector('.read-indicator');
+        if (indicator) {
+            indicator.innerHTML = '<i class="fas fa-check-double text-primary"></i>';
+            indicator.title = 'Read';
+        }
+    }
+}
+
+// Update message status (for sender)
+function updateMessageStatus(messageId, status) {
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageElement) {
+        const indicator = messageElement.querySelector('.read-indicator');
+        if (indicator) {
+            if (status === 'read') {
+                indicator.innerHTML = '<i class="fas fa-check-double text-primary"></i>';
+                indicator.title = 'Read';
+            } else {
+                indicator.innerHTML = '<i class="fas fa-check"></i>';
+                indicator.title = 'Sent';
+            }
+        }
+    }
+}
+
+// Load chats
+async function loadChats() {
+    try {
+        const response = await fetch('/api/rooms');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const rooms = await response.json();
+        
+        const chatsList = document.getElementById('chatsList');
+        if (!chatsList) {
+            console.error('chatsList element not found');
+            return;
+        }
+        
+        chatsList.innerHTML = '';
+        
+        rooms.forEach(room => {
+            try {
+                const chatItem = document.createElement('div');
+                chatItem.className = 'list-group-item list-group-item-action';
+                chatItem.style.cursor = 'pointer';
+                chatItem.dataset.roomId = room.id;
+                
+                const memberNames = room.members.map(m => m.username).join(', ');
+                const displayName = room.is_group ? room.name : memberNames.replace(/,.*/, '');
+                
+                // Handle last message safely
+                let lastMessageText = 'No messages yet';
+                let lastMessageTime = '';
+                if (room.last_message && room.last_message.content) {
+                    lastMessageText = room.last_message.content;
+                    if (room.last_message.timestamp) {
+                        lastMessageTime = new Date(room.last_message.timestamp).toLocaleTimeString();
+                    }
+                }
+                
+                chatItem.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <h6 class="mb-1">${displayName}</h6>
+                        <small>${lastMessageTime}</small>
+                    </div>
+                    <p class="mb-1 text-truncate">${lastMessageText}</p>
+                    <small class="text-muted">${room.is_group ? 'Group' : 'Private'}</small>
+                `;
+                
+                chatItem.addEventListener('click', () => openChat(room.id, displayName, room.members));
+                chatsList.appendChild(chatItem);
+            } catch (itemError) {
+                console.error('Error creating chat item:', itemError);
+            }
+        });
+    } catch (error) {
+        console.error('Error loading chats:', error);
+        // Show user-friendly error
+        const chatsList = document.getElementById('chatsList');
+        if (chatsList) {
+            chatsList.innerHTML = '<div class="text-center text-muted p-3">Error loading chats. Please refresh.</div>';
+        }
+    }
+}
+
+// Open chat
+function openChat(roomId, title, members) {
+    currentRoomId = roomId;
+    
+    try {
+        // Update UI
+        const selectMessage = document.getElementById('selectChatMessage');
+        const chatHeader = document.getElementById('chatHeader');
+        const messageInput = document.getElementById('messageInput');
+        const chatTitle = document.getElementById('chatTitle');
+        const chatMembersEl = document.getElementById('chatMembers');
+        
+        if (selectMessage) selectMessage.style.display = 'none';
+        if (chatHeader) chatHeader.style.display = 'block';
+        if (messageInput) messageInput.style.display = 'block';
+        
+        if (chatTitle) chatTitle.textContent = title;
+        if (chatMembersEl) chatMembersEl.textContent = members.map(m => m.username).join(', ');
+        
+        // Join room
+        socket.emit('join_room', { room_id: roomId });
+        
+        // Load messages
+        loadMessages(roomId);
+        
+        // Update active chat in sidebar
+        document.querySelectorAll('.list-group-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        const activeChat = document.querySelector(`[data-room-id="${roomId}"]`);
+        if (activeChat) {
+            activeChat.classList.add('active');
+        }
+    } catch (error) {
+        console.error('Error opening chat:', error);
+    }
+}
+
+// Load messages
+async function loadMessages(roomId) {
+    try {
+        const response = await fetch(`/api/messages/${roomId}`);
+        const messages = await response.json();
+        
+        const container = document.getElementById('messagesContainer');
+        container.innerHTML = '';
+        currentMessages = messages;
+        
+        messages.forEach(message => {
+            addMessageToChat(message, false);
+        });
+        
+        container.scrollTop = container.scrollHeight;
+    } catch (error) {
+        console.error('Error loading messages:', error);
+    }
+}
+
+// Add message to chat
+function addMessageToChat(messageData, scroll = true) {
+    const container = document.getElementById('messagesContainer');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'd-flex mb-2';
+    messageDiv.dataset.messageId = messageData.id;
+    
+    const currentUserId = {{ session.get('user_id', 'null') }};
+    const isOwnMessage = messageData.sender_id === currentUserId;
+    
+    if (isOwnMessage) {
+        messageDiv.classList.add('justify-content-end');
+    }
+    
+    const bubble = document.createElement('div');
+    bubble.className = `message-bubble ${isOwnMessage ? 'message-sent' : 'message-received'}`;
+    
+    if (messageData.self_destruct_time) {
+        bubble.classList.add('self-destruct');
+        bubble.title = `Self-destructs at ${new Date(messageData.self_destruct_time).toLocaleString()}`;
+    }
+    
+    const time = new Date(messageData.timestamp).toLocaleTimeString();
+    let readIndicator = '';
+    
+    if (isOwnMessage) {
+        const status = messageData.read_status || 'sent';
+        if (status === 'read') {
+            readIndicator = `<span class="read-indicator ms-1" title="Read"><i class="fas fa-check-double text-primary"></i></span>`;
+        } else {
+            readIndicator = `<span class="read-indicator ms-1" title="Sent"><i class="fas fa-check"></i></span>`;
+        }
+    }
+    
+    let contentHtml = '';
+    
+    if (messageData.message_type === 'file') {
+        const fileIcon = getFileIcon(messageData.file_type);
+        contentHtml = `
+            <div class="file-message">
+                <div class="file-info d-flex align-items-center p-2 border rounded">
+                    <i class="${fileIcon} fa-lg me-2"></i>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold small">${messageData.file_name}</div>
+                        <div class="text-muted" style="font-size: 0.75em;">${formatFileSize(messageData.file_size)} • ${messageData.file_type}</div>
+                    </div>
+                    <a href="/download_file/${messageData.id}" class="btn btn-outline-light btn-sm" title="Download">
+                        <i class="fas fa-download"></i>
+                    </a>
+                </div>
+                ${messageData.file_type === 'image' ? `<div class="mt-2"><img src="/download_file/${messageData.id}" class="img-thumbnail" style="max-width: 250px; max-height: 150px;" alt="${messageData.file_name}"></div>` : ''}
+            </div>
+        `;
+    } else {
+        // Handle encrypted content
+        let displayContent = messageData.content;
+        
+        // If there's encrypted content and it's different from regular content, show the plain content
+        // In a full Zero-Knowledge implementation, you would decrypt messageData.encrypted_content here
+        if (messageData.encrypted_content && messageData.encrypted_content !== messageData.content) {
+            // For now, just use the regular content to avoid decryption issues
+            displayContent = messageData.content;
+        }
+        
+        // If the content looks like encrypted data (base64), show a fallback message
+        if (displayContent && displayContent.length > 100 && !displayContent.includes(' ')) {
+            displayContent = '[Encrypted Message - Decryption not implemented on client]';
+        }
+        
+        contentHtml = `<div>${displayContent}</div>`;
+    }
+    
+    bubble.innerHTML = `
+        ${contentHtml}
+        <small class="d-block mt-1 ${isOwnMessage ? 'text-white-50' : 'text-muted'}">
+            ${time} - ${messageData.sender} ${readIndicator}
+        </small>
+    `;
+    
+    messageDiv.appendChild(bubble);
+    container.appendChild(messageDiv);
+    
+    if (scroll) {
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // Mark as read if not own message
+    if (!isOwnMessage) {
+        socket.emit('mark_as_read', { message_id: messageData.id });
+    }
+}
+
+// Remove message from chat
+function removeMessageFromChat(messageId) {
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageElement) {
+        messageElement.remove();
+    }
+}
+
+// Send message
+function sendMessage() {
+    // Check if there's a file to upload
+    if (selectedFile) {
+        uploadFile();
+        return;
+    }
+    
+    const messageText = document.getElementById('messageText');
+    const selfDestructTime = document.getElementById('selfDestructTime');
+    
+    if (!messageText.value.trim() || !currentRoomId) return;
+    
+    console.log('Sending message:', {
+        room_id: currentRoomId,
+        content: messageText.value.trim(),
+        self_destruct_minutes: parseInt(selfDestructTime.value)
+    });
+    
+    socket.emit('send_message', {
+        room_id: currentRoomId,
+        content: messageText.value.trim(),
+        self_destruct_minutes: parseInt(selfDestructTime.value)
+    });
+    
+    messageText.value = '';
+    selfDestructTime.value = '0';
+}
+
+// Event listeners
+document.getElementById('sendButton').addEventListener('click', sendMessage);
+document.getElementById('messageText').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+
+// Load users for new chat
+async function loadUsers() {
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        
+        const usersList = document.getElementById('usersList');
+        usersList.innerHTML = '';
+        
+        users.forEach(user => {
+            const userItem = document.createElement('div');
+            userItem.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+            userItem.style.cursor = 'pointer';
+            
+            userItem.innerHTML = `
+                <div>
+                    <strong>${user.username}</strong>
+                    <span class="${user.is_online ? 'online-indicator' : 'offline-indicator'}"></span>
+                </div>
+                <small class="text-muted">${user.is_online ? 'Online' : 'Last seen: ' + (user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never')}</small>
+            `;
+            
+            userItem.addEventListener('click', async () => {
+                try {
+                    const response = await fetch(`/api/start_chat/${user.id}`);
+                    const data = await response.json();
+                    
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('newChatModal'));
+                    modal.hide();
+                    
+                    if (data.room_id && data.status === 'existing') {
+                        await loadChats();
+                        openChat(data.room_id, user.username, [user]);
+                    } else if (data.status === 'invitation_sent') {
+                        alert('Chat invitation sent to ' + user.username + '! They will receive a notification.');
+                    } else if (data.status === 'invitation_pending') {
+                        alert('You have already sent a chat invitation to ' + user.username);
+                    }
+                } catch (error) {
+                    console.error('Error starting chat:', error);
+                    alert('Error starting chat');
+                }
+            });
+            
+            usersList.appendChild(userItem);
+        });
+    } catch (error) {
+        console.error('Error loading users:', error);
+    }
+}
+
+// Load users for group creation
+async function loadUsersForGroup() {
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        
+        const usersList = document.getElementById('groupUsersList');
+        usersList.innerHTML = '';
+        
+        users.forEach(user => {
+            const userItem = document.createElement('div');
+            userItem.className = 'list-group-item';
+            
+            userItem.innerHTML = `
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="${user.id}" id="user_${user.id}">
+                    <label class="form-check-label d-flex justify-content-between align-items-center w-100" for="user_${user.id}">
+                        <div>
+                            <strong>${user.username}</strong>
+                            <span class="${user.is_online ? 'online-indicator' : 'offline-indicator'}"></span>
+                        </div>
+                        <small class="text-muted">${user.is_online ? 'Online' : 'Last seen: ' + (user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never')}</small>
+                    </label>
+                </div>
+            `;
+            
+            usersList.appendChild(userItem);
+        });
+    } catch (error) {
+        console.error('Error loading users for group:', error);
+    }
+}
+
+// Create group chat
+async function createGroup() {
+    const groupName = document.getElementById('groupName').value.trim();
+    const checkedUsers = document.querySelectorAll('#groupUsersList input[type="checkbox"]:checked');
+    
+    if (!groupName) {
+        alert('Please enter a group name');
+        return;
+    }
+    
+    if (checkedUsers.length === 0) {
+        alert('Please select at least one user to add to the group');
+        return;
+    }
+    
+    const memberIds = Array.from(checkedUsers).map(checkbox => parseInt(checkbox.value));
+    
+    try {
+        const response = await fetch('/api/create_group', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                name: groupName,
+                member_ids: memberIds
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createGroupModal'));
+            modal.hide();
+            
+            // Clear form
+            document.getElementById('groupName').value = '';
+            checkedUsers.forEach(checkbox => checkbox.checked = false);
+            
+            await loadChats();
+            alert('Group created successfully!');
+        } else {
+            alert(data.error || 'Error creating group');
+        }
+    } catch (error) {
+        console.error('Error creating group:', error);
+        alert('Error creating group');
+    }
+}
+
+// Load users when modals open
+document.getElementById('newChatModal').addEventListener('show.bs.modal', loadUsers);
+document.getElementById('createGroupModal').addEventListener('show.bs.modal', loadUsersForGroup);
+
+// Create group button event
+document.getElementById('createGroupBtn').addEventListener('click', createGroup);
+
+// File Upload Functionality
+let selectedFile = null;
+
+// Attach file button
+document.getElementById('attachFileBtn').addEventListener('click', function() {
+    document.getElementById('fileInput').click();
+});
+
+// File input change
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        selectedFile = file;
+        showFilePreview(file);
+    }
+});
+
+// Show file preview
+function showFilePreview(file) {
+    const fileUploadArea = document.getElementById('fileUploadArea');
+    const selectedFileName = document.getElementById('selectedFileName');
+    const fileSize = document.getElementById('fileSize');
+    
+    selectedFileName.textContent = file.name;
+    fileSize.textContent = `(${formatFileSize(file.size)})`;
+    fileUploadArea.style.display = 'block';
+}
+
+// Cancel file upload
+document.getElementById('cancelFileUpload').addEventListener('click', function() {
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileUploadArea').style.display = 'none';
+});
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Upload file
+async function uploadFile() {
+    if (!selectedFile || !currentRoomId) return;
+    
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('room_id', currentRoomId);
+    formData.append('self_destruct_minutes', document.getElementById('selfDestructTime').value);
+    
+    // Show upload progress
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressBar = uploadProgress.querySelector('.progress-bar');
+    uploadProgress.style.display = 'block';
+    progressBar.style.width = '50%';
+    
+    try {
+        const response = await fetch('/api/upload_file', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Clear file selection
+            selectedFile = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileUploadArea').style.display = 'none';
+            document.getElementById('selfDestructTime').value = '0';
+            progressBar.style.width = '100%';
+        } else {
+            alert(data.error || 'Error uploading file');
+        }
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        alert('Error uploading file');
+    } finally {
+        setTimeout(() => {
+            uploadProgress.style.display = 'none';
+            progressBar.style.width = '0%';
+        }, 1000);
+    }
+}
+
+// Get file icon based on file type
+function getFileIcon(fileType) {
+    switch (fileType) {
+        case 'image': return 'fas fa-image text-primary';
+        case 'audio': return 'fas fa-music text-info';
+        case 'video': return 'fas fa-video text-warning';
+        case 'document': return 'fas fa-file-alt text-secondary';
+        default: return 'fas fa-file text-muted';
+    }
+}
+
+// Update chat preview
+function updateChatPreview(roomId, content, timestamp) {
+    try {
+        const chatItem = document.querySelector(`[data-room-id="${roomId}"]`);
+        if (chatItem) {
+            const previewElement = chatItem.querySelector('p.mb-1');
+            const timeElements = chatItem.querySelectorAll('small');
+            
+            if (previewElement) {
+                previewElement.textContent = content.length > 50 ? content.substring(0, 50) + '...' : content;
+            }
+            
+            // Update the first small element (timestamp)
+            if (timeElements.length > 0) {
+                timeElements[0].textContent = new Date(timestamp).toLocaleTimeString();
+            }
+            
+            // Move this chat to top of list for better UX
+            const chatsList = document.getElementById('chatsList');
+            if (chatsList && chatItem.parentNode === chatsList) {
+                chatsList.insertBefore(chatItem, chatsList.firstChild);
+            }
+        }
+    } catch (error) {
+        console.error('Error updating chat preview:', error);
+    }
+}
+</script>
+{% endblock %}

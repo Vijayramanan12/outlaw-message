@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Saloon Entrance - Outlaw Telegraph{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center min-vh-100">
+    <div class="western-decoration" style="top: 5%; left: 15%; font-size: 3rem;">🌵</div>
+    <div class="western-decoration" style="top: 10%; right: 10%; font-size: 3rem;">🔫</div>
+    <div class="western-decoration" style="bottom: 5%; left: 10%; font-size: 3rem;">🤠</div>
+    <div class="western-decoration" style="top: 20%; right: 15%; font-size: 2rem;">⭐</div>
+    <div class="western-decoration" style="bottom: 15%; left: 20%; font-size: 2.5rem;">🤠</div>
+
+    <div class="western-card p-5" style="width: 100%; max-width: 400px;">
+        <div class="text-center mb-4">
+            <h2 class="mb-3"><i class="fas fa-star me-2"></i>Welcome Back, Partner</h2>
+            <p class="text-green">Enter the saloon with your credentials</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="mb-3">
+                <label for="username" class="form-label" style="color: #DC143C;">Outlaw Name</label>
+                <input type="text" class="form-control" id="username" required>
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label" style="color: #DC143C;">Secret Code</label>
+                <input type="password" class="form-control" id="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 mb-3">
+                <i class="fas fa-door-open me-2"></i>Enter Saloon
+            </button>
+        </form>
+
+        <div class="text-center">
+            <p style="color: #DC143C;">
+                <a href="/voice_login" class="text-decoration-none me-3" style="color: var(--gold-dust);">
+                    <i class="fas fa-microphone me-1"></i>Voice Login
+                </a>
+                |
+                <a href="/register" class="text-decoration-none ms-3" style="color: var(--gold-dust);">Join the gang</a>
+            </p>
+        </div>
+
+        <div id="message" class="mt-3"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        const response = await fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            window.location.href = data.redirect;
+        } else {
+            document.getElementById('message').innerHTML = 
+                `<div class="alert alert-danger">${data.message}</div>`;
+        }
+    } catch (error) {
+        document.getElementById('message').innerHTML = 
+            `<div class="alert alert-danger">An error occurred</div>`;
+    }
+});
+</script>
+{% endblock %}
