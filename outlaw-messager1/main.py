@@ -2,6 +2,10 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
@@ -31,11 +35,23 @@ from cryptography.hazmat.backends import default_backend
 import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///messenger.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+
+# Configuration
+config_name = os.environ.get('FLASK_ENV', 'development')
+if config_name == 'production':
+    from config import ProductionConfig
+    app.config.from_object(ProductionConfig)
+else:
+    from config import DevelopmentConfig
+    app.config.from_object(DevelopmentConfig)
+
+# Fallback configuration if config.py is not available
+if not hasattr(app.config, 'SECRET_KEY') or not app.config['SECRET_KEY']:
+    app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///messenger.db')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
+    app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 100 * 1024 * 1024))
 
 # Create upload directory
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -2033,6 +2049,30 @@ def cleanup_messages():
 
         time.sleep(60)
 
+# Health check endpoint for production monitoring
+@app.route('/health')
+def health_check():
+    try:
+        # Check database connection
+        db.session.execute(db.text('SELECT 1'))
+        
+        # Check upload directory
+        upload_dir_exists = os.path.exists(app.config['UPLOAD_FOLDER'])
+        
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': get_ist_time().isoformat(),
+            'database': 'connected',
+            'upload_directory': 'accessible' if upload_dir_exists else 'missing',
+            'version': '1.0.0'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': get_ist_time().isoformat(),
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
@@ -2040,4 +2080,8 @@ if __name__ == '__main__':
     cleanup_thread = threading.Thread(target=cleanup_messages, daemon=True)
     cleanup_thread.start()
 
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    # Get port from environment (for Heroku/production) or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug)
