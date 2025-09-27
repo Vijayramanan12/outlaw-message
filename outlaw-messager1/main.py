@@ -605,6 +605,7 @@ def perform_dual_verification(audio_file_path, stored_features, challenge_phrase
         # Step 2: Voiceprint extraction
         test_features = extract_mfcc_features(audio_file_path)
         if test_features is None:
+            print("ERROR: Failed to extract MFCC features from audio")
             return False, 0.0, spoken_text, False, False
 
         voice_match, similarity = compare_voice_features(stored_features, test_features, threshold)
@@ -617,9 +618,11 @@ def perform_dual_verification(audio_file_path, stored_features, challenge_phrase
         print(f"  Expected phrase: '{challenge_phrase}'")
         print(f"  Text match: {text_match}")
         print(f"  Voice match: {voice_match} (similarity: {similarity:.3f})")
+        print(f"  Threshold: {threshold}")
         print(f"  Final decision: {'PASS' if dual_success else 'FAIL'}")
-
-        return dual_success, similarity, spoken_text, text_match
+        
+        # Return all necessary values: success, similarity, spoken_text, text_match, voice_match
+        return dual_success, similarity, spoken_text, text_match, voice_match
 
     except Exception as e:
         print(f"Error in dual verification: {e}")
@@ -1439,7 +1442,7 @@ def voice_login():
         stored_features = json.loads(voice_profile.mfcc_features)
         challenge_phrase = session['challenge_phrase']
         
-        dual_success, similarity, spoken_text, text_match = perform_dual_verification(
+        dual_success, similarity, spoken_text, text_match, voice_match = perform_dual_verification(
             wav_path, stored_features, challenge_phrase
         )
         
@@ -1463,16 +1466,14 @@ def voice_login():
                 'redirect': url_for('index')
             })
         else:
-            voice_match, voice_similarity = compare_voice_features(stored_features, json.loads(voice_profile.mfcc_features))
-            
             if not text_match and not voice_match:
                 message = f'Authentication failed. Both phrase and voice pattern did not match. (Voice similarity: {similarity:.2%})'
             elif not text_match:
-                message = f'Authentication failed. Spoken text did not match challenge phrase. (Voice similarity: {similarity:.2%})'
+                message = f'Authentication failed. Spoken text did not match challenge phrase. Spoken: "{spoken_text}" Expected: "{challenge_phrase}" (Voice similarity: {similarity:.2%})'
             elif not voice_match:
                 message = f'Authentication failed. Voice pattern did not match. (Voice similarity: {similarity:.2%})'
             else:
-                message = f'Authentication failed. (Voice similarity: {similarity:.2%})'
+                message = f'Authentication failed. Unknown error. (Voice similarity: {similarity:.2%})'
             
             return jsonify({
                 'success': False,
