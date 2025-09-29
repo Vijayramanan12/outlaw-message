@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block title %}Outlaw Telegraph - Secure Messaging{% endblock %}
@@ -9,8 +8,8 @@
     <div class="western-decoration" style="top: 10px; left: 20px;">🤠</div>
     <div class="western-decoration" style="top: 15px; right: 30px;">⭐</div>
     <div class="western-decoration" style="bottom: 20px; left: 40px;">🌵</div>
-    
     <!-- User Header -->
+
     <div class="western-card p-3 mb-3">
         <div class="d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
@@ -24,7 +23,7 @@
                     <span id="notificationStatus">Notifications: <span id="notificationPermission">Checking...</span></span>
                 </span>
                 <div class="dropdown me-3">
-                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle position-relative" type="button" id="invitationsDropdown" data-bs-toggle="dropdown">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle position-relative" type="button" id="invitationsDropdown" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false">
                         <i class="fas fa-envelope"></i> Invitations
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="invitationCount" style="display: none;">0</span>
                     </button>
@@ -39,7 +38,53 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Device Alert Modal -->
+    <div class="modal fade" id="deviceAlertModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header border-warning">
+                    <h5 class="modal-title text-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>New Device Alert
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-shield-alt me-2"></i>Security Notice</h6>
+                        <p class="mb-0">Your account was accessed from a new device. Please verify this is you.</p>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-desktop me-2"></i>Device Information</h6>
+                            <ul class="list-unstyled">
+                                <li><strong>Browser:</strong> <span id="deviceBrowser">Unknown</span></li>
+                                <li><strong>Operating System:</strong> <span id="deviceOS">Unknown</span></li>
+                                <li><strong>IP Address:</strong> <span id="deviceIP">Unknown</span></li>
+                                <li><strong>Login Time:</strong> <span id="deviceTime">Unknown</span></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-info-circle me-2"></i>What This Means</h6>
+                            <p class="small text-muted">
+                                This alert appears when someone logs into your account from a device we haven't seen before. 
+                                If this was you, you can mark this device as trusted. If not, please change your password immediately.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="dismissDeviceAlert">
+                        <i class="fas fa-times me-1"></i>Dismiss
+                    </button>
+                    <button type="button" class="btn btn-warning" id="trustDevice">
+                        <i class="fas fa-shield-check me-1"></i>Trust This Device
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <!-- Sidebar -->
         <div class="col-md-4 col-lg-3">
@@ -64,6 +109,9 @@
                             <li><a class="dropdown-item" href="/steganography">
                                 <i class="fas fa-eye-slash me-2"></i>Secret Images
                             </a></li>
+                            <li><a class="dropdown-item" href="/device_management">
+                                <i class="fas fa-shield-alt me-2"></i>Device Management
+                            </a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="/logout">
                                 <i class="fas fa-horse me-2"></i>Ride Off
@@ -71,13 +119,13 @@
                         </ul>
                     </div>
                 </div>
-                
+
                 <div id="chatsList" class="list-group">
                     <!-- Chat rooms will be loaded here -->
                 </div>
             </div>
         </div>
-        
+
         <!-- Chat Area -->
         <div class="col-md-8 col-lg-9">
             <div class="western-card chat-container">
@@ -85,14 +133,14 @@
                     <h5 id="chatTitle"></h5>
                     <small id="chatMembers" class="text-muted"></small>
                 </div>
-                
+
                 <div id="messagesContainer" style="height: 60vh; overflow-y: auto; padding: 15px;">
                     <div class="text-center text-muted" id="selectChatMessage">
                         <i class="fas fa-horse-head fa-3x mb-3" style="color: var(--gold-dust);"></i>
                         <p style="font-family: 'Rye', serif; color: var(--gold-dust);">Choose your communication partner, partner</p>
                     </div>
                 </div>
-                
+
                 <div id="messageInput" class="border-top p-3" style="display: none;">
                     <!-- File Upload Area -->
                     <div id="fileUploadArea" class="mb-3" style="display: none;">
@@ -114,7 +162,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="row">
                         <div class="col">
                             <div class="input-group">
@@ -190,6 +238,64 @@ let currentRoomId = null;
 let currentMessages = [];
 let pendingInvitations = [];
 
+// Device Alert Functionality
+async function checkDeviceAlert() {
+    try {
+        const response = await fetch('/api/device_alert');
+        if (response.ok) {
+            const data = await response.json();
+            if (data.alert) {
+                showDeviceAlert(data.alert);
+            }
+        }
+    } catch (error) {
+        console.error('Error checking device alert:', error);
+    }
+}
+
+function showDeviceAlert(alertData) {
+    const modal = new bootstrap.Modal(document.getElementById('deviceAlertModal'));
+
+    // Populate device information
+    document.getElementById('deviceBrowser').textContent = alertData.device_info.browser_info || 'Unknown';
+    document.getElementById('deviceOS').textContent = alertData.device_info.os_info || 'Unknown';
+    document.getElementById('deviceIP').textContent = alertData.device_info.ip_address || 'Unknown';
+    document.getElementById('deviceTime').textContent = new Date(alertData.timestamp).toLocaleString();
+
+    // Show the modal
+    modal.show();
+}
+
+// Device alert event handlers
+document.getElementById('dismissDeviceAlert').addEventListener('click', async function() {
+    try {
+        await fetch('/api/device_alert/dismiss', { method: 'POST' });
+        bootstrap.Modal.getInstance(document.getElementById('deviceAlertModal')).hide();
+    } catch (error) {
+        console.error('Error dismissing device alert:', error);
+    }
+});
+
+document.getElementById('trustDevice').addEventListener('click', async function() {
+    try {
+        // Get current device ID from session (this would need to be passed from server)
+        const response = await fetch('/api/devices');
+        if (response.ok) {
+            const data = await response.json();
+            const currentDevice = data.devices.find(device => device.is_current);
+            if (currentDevice) {
+                const trustResponse = await fetch(`/api/devices/${currentDevice.id}/trust`, { method: 'POST' });
+                if (trustResponse.ok) {
+                    alert('Device marked as trusted!');
+                }
+            }
+        }
+        bootstrap.Modal.getInstance(document.getElementById('deviceAlertModal')).hide();
+    } catch (error) {
+        console.error('Error trusting device:', error);
+    }
+});
+
 // Load pending invitations
 async function loadPendingInvitations() {
     try {
@@ -209,11 +315,11 @@ function updateInvitationUI() {
     const invitationsList = document.getElementById('invitationsList');
     const invitationCount = document.getElementById('invitationCount');
     const noInvitations = document.getElementById('noInvitations');
-    
+
     // Clear existing invitations (except header and no invitations message)
     const existingInvitations = invitationsList.querySelectorAll('.invitation-item');
     existingInvitations.forEach(item => item.remove());
-    
+
     if (pendingInvitations.length === 0) {
         invitationCount.style.display = 'none';
         noInvitations.style.display = 'block';
@@ -221,7 +327,7 @@ function updateInvitationUI() {
         invitationCount.style.display = 'block';
         invitationCount.textContent = pendingInvitations.length;
         noInvitations.style.display = 'none';
-        
+
         pendingInvitations.forEach(invitation => {
             const invitationItem = document.createElement('li');
             invitationItem.className = 'invitation-item';
@@ -260,25 +366,25 @@ async function respondToInvitation(invitationId, response) {
             },
             body: JSON.stringify({ response: response })
         });
-        
+
         if (apiResponse.ok) {
             const data = await apiResponse.json();
-            
+
             // Remove invitation from pending list
             pendingInvitations = pendingInvitations.filter(inv => inv.id !== invitationId);
             updateInvitationUI();
-            
+
             if (response === 'accept' && data.room_id) {
                 // Reload chats to show the new room
                 await loadChats();
-                
+
                 // Find the new chat and open it
                 const newChat = document.querySelector(`[data-room-id="${data.room_id}"]`);
                 if (newChat) {
                     newChat.click();
                 }
             }
-            
+
             alert(response === 'accept' ? 'Invitation accepted!' : 'Invitation rejected');
         } else {
             const error = await apiResponse.json();
@@ -297,7 +403,7 @@ function checkNotificationPermission() {
         document.getElementById('notificationPermission').textContent = 
             permission === 'granted' ? 'Enabled' : 
             permission === 'denied' ? 'Disabled' : 'Click to Enable';
-        
+
         if (permission === 'default') {
             document.getElementById('notificationPermission').style.cursor = 'pointer';
             document.getElementById('notificationPermission').onclick = requestNotificationPermission;
@@ -337,20 +443,21 @@ socket.on('connect', function() {
     checkNotificationPermission();
     loadChats();
     loadPendingInvitations();
+    checkDeviceAlert(); // Check for device alerts
     socket.emit('get_pending_invitations');
 });
 
 socket.on('new_message', function(data) {
     try {
         const currentUserId = {{ session.get('user_id', 'null') }};
-        
+
         if (data.room_id === currentRoomId) {
             addMessageToChat(data);
         }
-        
+
         // Always update chat preview for all rooms
         updateChatPreview(data.room_id, data.content, data.timestamp);
-        
+
         // Show notification if message is not from current user
         if (data.sender_id !== currentUserId) {
             showNotification(
@@ -402,7 +509,7 @@ socket.on('invitation_response', function(data) {
         data.message,
         data.response === 'accept' ? '✅' : '❌'
     );
-    
+
     if (data.response === 'accept' && data.room_id) {
         loadChats();
     }
@@ -450,25 +557,25 @@ async function loadChats() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const rooms = await response.json();
-        
+
         const chatsList = document.getElementById('chatsList');
         if (!chatsList) {
             console.error('chatsList element not found');
             return;
         }
-        
+
         chatsList.innerHTML = '';
-        
+
         rooms.forEach(room => {
             try {
                 const chatItem = document.createElement('div');
                 chatItem.className = 'list-group-item list-group-item-action';
                 chatItem.style.cursor = 'pointer';
                 chatItem.dataset.roomId = room.id;
-                
+
                 const memberNames = room.members.map(m => m.username).join(', ');
                 const displayName = room.is_group ? room.name : memberNames.replace(/,.*/, '');
-                
+
                 // Handle last message safely
                 let lastMessageText = 'No messages yet';
                 let lastMessageTime = '';
@@ -478,7 +585,7 @@ async function loadChats() {
                         lastMessageTime = new Date(room.last_message.timestamp).toLocaleTimeString();
                     }
                 }
-                
+
                 chatItem.innerHTML = `
                     <div class="d-flex justify-content-between">
                         <h6 class="mb-1">${displayName}</h6>
@@ -487,7 +594,7 @@ async function loadChats() {
                     <p class="mb-1 text-truncate">${lastMessageText}</p>
                     <small class="text-muted">${room.is_group ? 'Group' : 'Private'}</small>
                 `;
-                
+
                 chatItem.addEventListener('click', () => openChat(room.id, displayName, room.members));
                 chatsList.appendChild(chatItem);
             } catch (itemError) {
@@ -507,7 +614,7 @@ async function loadChats() {
 // Open chat
 function openChat(roomId, title, members) {
     currentRoomId = roomId;
-    
+
     try {
         // Update UI
         const selectMessage = document.getElementById('selectChatMessage');
@@ -515,25 +622,25 @@ function openChat(roomId, title, members) {
         const messageInput = document.getElementById('messageInput');
         const chatTitle = document.getElementById('chatTitle');
         const chatMembersEl = document.getElementById('chatMembers');
-        
+
         if (selectMessage) selectMessage.style.display = 'none';
         if (chatHeader) chatHeader.style.display = 'block';
         if (messageInput) messageInput.style.display = 'block';
-        
+
         if (chatTitle) chatTitle.textContent = title;
         if (chatMembersEl) chatMembersEl.textContent = members.map(m => m.username).join(', ');
-        
+
         // Join room
         socket.emit('join_room', { room_id: roomId });
-        
+
         // Load messages
         loadMessages(roomId);
-        
+
         // Update active chat in sidebar
         document.querySelectorAll('.list-group-item').forEach(item => {
             item.classList.remove('active');
         });
-        
+
         const activeChat = document.querySelector(`[data-room-id="${roomId}"]`);
         if (activeChat) {
             activeChat.classList.add('active');
@@ -548,15 +655,15 @@ async function loadMessages(roomId) {
     try {
         const response = await fetch(`/api/messages/${roomId}`);
         const messages = await response.json();
-        
+
         const container = document.getElementById('messagesContainer');
         container.innerHTML = '';
         currentMessages = messages;
-        
+
         messages.forEach(message => {
             addMessageToChat(message, false);
         });
-        
+
         container.scrollTop = container.scrollHeight;
     } catch (error) {
         console.error('Error loading messages:', error);
@@ -569,25 +676,25 @@ function addMessageToChat(messageData, scroll = true) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'd-flex mb-2';
     messageDiv.dataset.messageId = messageData.id;
-    
+
     const currentUserId = {{ session.get('user_id', 'null') }};
     const isOwnMessage = messageData.sender_id === currentUserId;
-    
+
     if (isOwnMessage) {
         messageDiv.classList.add('justify-content-end');
     }
-    
+
     const bubble = document.createElement('div');
     bubble.className = `message-bubble ${isOwnMessage ? 'message-sent' : 'message-received'}`;
-    
+
     if (messageData.self_destruct_time) {
         bubble.classList.add('self-destruct');
         bubble.title = `Self-destructs at ${new Date(messageData.self_destruct_time).toLocaleString()}`;
     }
-    
+
     const time = new Date(messageData.timestamp).toLocaleTimeString();
     let readIndicator = '';
-    
+
     if (isOwnMessage) {
         const status = messageData.read_status || 'sent';
         if (status === 'read') {
@@ -596,9 +703,9 @@ function addMessageToChat(messageData, scroll = true) {
             readIndicator = `<span class="read-indicator ms-1" title="Sent"><i class="fas fa-check"></i></span>`;
         }
     }
-    
+
     let contentHtml = '';
-    
+
     if (messageData.message_type === 'file') {
         const fileIcon = getFileIcon(messageData.file_type);
         contentHtml = `
@@ -619,36 +726,36 @@ function addMessageToChat(messageData, scroll = true) {
     } else {
         // Handle encrypted content
         let displayContent = messageData.content;
-        
+
         // If there's encrypted content and it's different from regular content, show the plain content
         // In a full Zero-Knowledge implementation, you would decrypt messageData.encrypted_content here
         if (messageData.encrypted_content && messageData.encrypted_content !== messageData.content) {
             // For now, just use the regular content to avoid decryption issues
             displayContent = messageData.content;
         }
-        
+
         // If the content looks like encrypted data (base64), show a fallback message
         if (displayContent && displayContent.length > 100 && !displayContent.includes(' ')) {
             displayContent = '[Encrypted Message - Decryption not implemented on client]';
         }
-        
+
         contentHtml = `<div>${displayContent}</div>`;
     }
-    
+
     bubble.innerHTML = `
         ${contentHtml}
         <small class="d-block mt-1 ${isOwnMessage ? 'text-white-50' : 'text-muted'}">
             ${time} - ${messageData.sender} ${readIndicator}
         </small>
     `;
-    
+
     messageDiv.appendChild(bubble);
     container.appendChild(messageDiv);
-    
+
     if (scroll) {
         container.scrollTop = container.scrollHeight;
     }
-    
+
     // Mark as read if not own message
     if (!isOwnMessage) {
         socket.emit('mark_as_read', { message_id: messageData.id });
@@ -670,24 +777,24 @@ function sendMessage() {
         uploadFile();
         return;
     }
-    
+
     const messageText = document.getElementById('messageText');
     const selfDestructTime = document.getElementById('selfDestructTime');
-    
+
     if (!messageText.value.trim() || !currentRoomId) return;
-    
+
     console.log('Sending message:', {
         room_id: currentRoomId,
         content: messageText.value.trim(),
         self_destruct_minutes: parseInt(selfDestructTime.value)
     });
-    
+
     socket.emit('send_message', {
         room_id: currentRoomId,
         content: messageText.value.trim(),
         self_destruct_minutes: parseInt(selfDestructTime.value)
     });
-    
+
     messageText.value = '';
     selfDestructTime.value = '0';
 }
@@ -705,15 +812,15 @@ async function loadUsers() {
     try {
         const response = await fetch('/api/users');
         const users = await response.json();
-        
+
         const usersList = document.getElementById('usersList');
         usersList.innerHTML = '';
-        
+
         users.forEach(user => {
             const userItem = document.createElement('div');
             userItem.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
             userItem.style.cursor = 'pointer';
-            
+
             userItem.innerHTML = `
                 <div>
                     <strong>${user.username}</strong>
@@ -721,15 +828,15 @@ async function loadUsers() {
                 </div>
                 <small class="text-muted">${user.is_online ? 'Online' : 'Last seen: ' + (user.last_seen ? new Date(user.last_seen).toLocaleString() : 'Never')}</small>
             `;
-            
+
             userItem.addEventListener('click', async () => {
                 try {
                     const response = await fetch(`/api/start_chat/${user.id}`);
                     const data = await response.json();
-                    
+
                     const modal = bootstrap.Modal.getInstance(document.getElementById('newChatModal'));
                     modal.hide();
-                    
+
                     if (data.room_id && data.status === 'existing') {
                         await loadChats();
                         openChat(data.room_id, user.username, [user]);
@@ -743,7 +850,7 @@ async function loadUsers() {
                     alert('Error starting chat');
                 }
             });
-            
+
             usersList.appendChild(userItem);
         });
     } catch (error) {
@@ -756,14 +863,14 @@ async function loadUsersForGroup() {
     try {
         const response = await fetch('/api/users');
         const users = await response.json();
-        
+
         const usersList = document.getElementById('groupUsersList');
         usersList.innerHTML = '';
-        
+
         users.forEach(user => {
             const userItem = document.createElement('div');
             userItem.className = 'list-group-item';
-            
+
             userItem.innerHTML = `
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" value="${user.id}" id="user_${user.id}">
@@ -776,7 +883,7 @@ async function loadUsersForGroup() {
                     </label>
                 </div>
             `;
-            
+
             usersList.appendChild(userItem);
         });
     } catch (error) {
@@ -788,19 +895,19 @@ async function loadUsersForGroup() {
 async function createGroup() {
     const groupName = document.getElementById('groupName').value.trim();
     const checkedUsers = document.querySelectorAll('#groupUsersList input[type="checkbox"]:checked');
-    
+
     if (!groupName) {
         alert('Please enter a group name');
         return;
     }
-    
+
     if (checkedUsers.length === 0) {
         alert('Please select at least one user to add to the group');
         return;
     }
-    
+
     const memberIds = Array.from(checkedUsers).map(checkbox => parseInt(checkbox.value));
-    
+
     try {
         const response = await fetch('/api/create_group', {
             method: 'POST',
@@ -812,17 +919,17 @@ async function createGroup() {
                 member_ids: memberIds
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             const modal = bootstrap.Modal.getInstance(document.getElementById('createGroupModal'));
             modal.hide();
-            
+
             // Clear form
             document.getElementById('groupName').value = '';
             checkedUsers.forEach(checkbox => checkbox.checked = false);
-            
+
             await loadChats();
             alert('Group created successfully!');
         } else {
@@ -863,7 +970,7 @@ function showFilePreview(file) {
     const fileUploadArea = document.getElementById('fileUploadArea');
     const selectedFileName = document.getElementById('selectedFileName');
     const fileSize = document.getElementById('fileSize');
-    
+
     selectedFileName.textContent = file.name;
     fileSize.textContent = `(${formatFileSize(file.size)})`;
     fileUploadArea.style.display = 'block';
@@ -888,26 +995,26 @@ function formatFileSize(bytes) {
 // Upload file
 async function uploadFile() {
     if (!selectedFile || !currentRoomId) return;
-    
+
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('room_id', currentRoomId);
     formData.append('self_destruct_minutes', document.getElementById('selfDestructTime').value);
-    
+
     // Show upload progress
     const uploadProgress = document.getElementById('uploadProgress');
     const progressBar = uploadProgress.querySelector('.progress-bar');
     uploadProgress.style.display = 'block';
     progressBar.style.width = '50%';
-    
+
     try {
         const response = await fetch('/api/upload_file', {
             method: 'POST',
             body: formData
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             // Clear file selection
             selectedFile = null;
@@ -947,16 +1054,16 @@ function updateChatPreview(roomId, content, timestamp) {
         if (chatItem) {
             const previewElement = chatItem.querySelector('p.mb-1');
             const timeElements = chatItem.querySelectorAll('small');
-            
+
             if (previewElement) {
                 previewElement.textContent = content.length > 50 ? content.substring(0, 50) + '...' : content;
             }
-            
+
             // Update the first small element (timestamp)
             if (timeElements.length > 0) {
                 timeElements[0].textContent = new Date(timestamp).toLocaleTimeString();
             }
-            
+
             // Move this chat to top of list for better UX
             const chatsList = document.getElementById('chatsList');
             if (chatsList && chatItem.parentNode === chatsList) {
