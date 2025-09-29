@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Device Management - Outlaw Telegraph{% endblock %}
+
+{% block content %}
+<div class="container p-4">
+    <div class="text-center mb-4">
+        <h2><i class="fas fa-shield-alt me-2"></i>Device Management</h2>
+        <p class="text-muted">Manage and monitor devices that have accessed your account</p>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="western-card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4><i class="fas fa-desktop me-2"></i>Your Devices</h4>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="loadDevices()">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
+                    </button>
+                </div>
+
+                <div id="devicesList" class="list-group">
+                    <div class="text-center text-muted p-3">
+                        <i class="fas fa-spinner fa-spin me-2"></i>Loading devices...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="western-card p-4">
+                <h5><i class="fas fa-info-circle me-2"></i>Security Information</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-shield-alt me-2"></i>Device Fingerprinting</h6>
+                        <p class="small text-muted">
+                            We track devices using browser fingerprinting technology that analyzes your browser, 
+                            operating system, and other technical details to create a unique device identifier.
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-exclamation-triangle me-2"></i>Security Alerts</h6>
+                        <p class="small text-muted">
+                            You'll receive alerts when someone logs into your account from a new device. 
+                            Always verify that new device logins are legitimate.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let devices = [];
+
+// Load devices from API
+async function loadDevices() {
+    try {
+        const response = await fetch('/api/devices');
+        if (response.ok) {
+            const data = await response.json();
+            devices = data.devices;
+            displayDevices();
+        } else {
+            showError('Failed to load devices');
+        }
+    } catch (error) {
+        console.error('Error loading devices:', error);
+        showError('Error loading devices');
+    }
+}
+
+// Display devices in the UI
+function displayDevices() {
+    const devicesList = document.getElementById('devicesList');
+
+    if (devices.length === 0) {
+        devicesList.innerHTML = '<div class="text-center text-muted p-3">No devices found</div>';
+        return;
+    }
+
+    devicesList.innerHTML = '';
+
+    devices.forEach(device => {
+        const deviceItem = document.createElement('div');
+        deviceItem.className = 'list-group-item';
+
+        const isCurrentDevice = device.is_current;
+        const statusBadge = device.is_active ? 
+            '<span class="badge bg-success">Active</span>' : 
+            '<span class="badge bg-secondary">Inactive</span>';
+
+        const trustedBadge = device.is_trusted ? 
+            '<span class="badge bg-primary">Trusted</span>' : 
+            '<span class="badge bg-warning">New</span>';
+
+        const currentBadge = isCurrentDevice ? 
+            '<span class="badge bg-info">Current Device</span>' : '';
+
+        deviceItem.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-2">
+                        <h6 class="mb-0 me-2">${device.device_name}</h6>
+                        ${statusBadge}
+                        ${trustedBadge}
+                        ${currentBadge}
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <small class="text-muted">
+                                <strong>Browser:</strong> ${device.browser_info}<br>
+                                <strong>OS:</strong> ${device.os_info}<br>
+                                <strong>IP:</strong> ${device.ip_address}
+                            </small>
+                        </div>
+                        <div class="col-md-6">
+                            <small class="text-muted">
+                                <strong>First Seen:</strong> ${new Date(device.first_seen).toLocaleString()}<br>
+                                <strong>Last Seen:</strong> ${new Date(device.last_seen).toLocaleString()}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="ms-3">
+                    ${!isCurrentDevice ? `
+                        <div class="btn-group-vertical btn-group-sm">
+                            ${!device.is_trusted ? `
+                                <button class="btn btn-outline-primary btn-sm" onclick="trustDevice(${device.id})">
+                                    <i class="fas fa-shield-check me-1"></i>Trust
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-outline-danger btn-sm" onclick="revokeDevice(${device.id})">
+                                <i class="fas fa-ban me-1"></i>Revoke
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        devicesList.appendChild(deviceItem);
+    });
+}
+
+// Trust a device
+async function trustDevice(deviceId) {
+    if (!confirm('Are you sure you want to trust this device? This will prevent future alerts from this device.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/devices/${deviceId}/trust`, { method: 'POST' });
+        if (response.ok) {
+            alert('Device marked as trusted!');
+            loadDevices(); // Refresh the list
+        } else {
+            showError('Failed to trust device');
+        }
+    } catch (error) {
+        console.error('Error trusting device:', error);
+        showError('Error trusting device');
+    }
+}
+
+// Revoke a device
+async function revokeDevice(deviceId) {
+    if (!confirm('Are you sure you want to revoke access for this device? This will prevent future logins from this device.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/devices/${deviceId}/revoke`, { method: 'POST' });
+        if (response.ok) {
+            alert('Device access revoked!');
+            loadDevices(); // Refresh the list
+        } else {
+            showError('Failed to revoke device');
+        }
+    } catch (error) {
+        console.error('Error revoking device:', error);
+        showError('Error revoking device');
+    }
+}
+
+// Show error message
+function showError(message) {
+    alert('Error: ' + message);
+}
+
+// Load devices when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadDevices();
+});
+</script>
+{% endblock %}
