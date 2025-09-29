@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -31,7 +30,7 @@ from cryptography.hazmat.backends import default_backend
 import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-insecure-key-change')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///messenger.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -39,6 +38,7 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
 # Create upload directory
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('instance', exist_ok=True)
 
 ALLOWED_AUDIO_EXTENSIONS = {'wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac'}
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tiff'}
@@ -59,7 +59,7 @@ def get_file_type(filename):
     """Determine file type category"""
     if not filename or '.' not in filename:
         return 'unknown'
-    
+
     ext = filename.rsplit('.', 1)[1].lower()
     if ext in ALLOWED_IMAGE_EXTENSIONS:
         return 'image'
@@ -95,7 +95,7 @@ class ZeroKnowledgeCrypto:
             backend=default_backend()
         )
         public_key = private_key.public_key()
-        
+
         # Serialize keys
         private_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -106,20 +106,20 @@ class ZeroKnowledgeCrypto:
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
-        
+
         return private_pem.decode(), public_pem.decode()
-    
+
     @staticmethod
     def encrypt_with_public_key(message, public_key_pem):
         """Encrypt message with recipient's public key"""
         public_key = serialization.load_pem_public_key(
             public_key_pem.encode(), backend=default_backend()
         )
-        
+
         # For large messages, use hybrid encryption
         if len(message.encode()) > 190:  # RSA-2048 can encrypt max ~190 bytes
             return ZeroKnowledgeCrypto._hybrid_encrypt(message, public_key)
-        
+
         encrypted = public_key.encrypt(
             message.encode(),
             padding.OAEP(
@@ -129,14 +129,14 @@ class ZeroKnowledgeCrypto:
             )
         )
         return base64.b64encode(encrypted).decode()
-    
+
     @staticmethod
     def decrypt_with_private_key(encrypted_message, private_key_pem):
         """Decrypt message with user's private key"""
         private_key = serialization.load_pem_private_key(
             private_key_pem.encode(), password=None, backend=default_backend()
         )
-        
+
         try:
             # Try direct RSA decryption first
             encrypted_bytes = base64.b64decode(encrypted_message.encode())
@@ -152,17 +152,17 @@ class ZeroKnowledgeCrypto:
         except:
             # Try hybrid decryption
             return ZeroKnowledgeCrypto._hybrid_decrypt(encrypted_message, private_key)
-    
+
     @staticmethod
     def _hybrid_encrypt(message, public_key):
         """Hybrid encryption for large messages"""
         # Generate symmetric key
         symmetric_key = secrets.token_bytes(32)
         cipher_suite = Fernet(base64.urlsafe_b64encode(symmetric_key))
-        
+
         # Encrypt message with symmetric key
         encrypted_message = cipher_suite.encrypt(message.encode())
-        
+
         # Encrypt symmetric key with public key
         encrypted_key = public_key.encrypt(
             symmetric_key,
@@ -172,18 +172,18 @@ class ZeroKnowledgeCrypto:
                 label=None
             )
         )
-        
+
         # Combine encrypted key and message
         combined = base64.b64encode(encrypted_key).decode() + "|||" + encrypted_message.decode()
         return base64.b64encode(combined.encode()).decode()
-    
+
     @staticmethod
     def _hybrid_decrypt(encrypted_data, private_key):
         """Hybrid decryption for large messages"""
         try:
             combined = base64.b64decode(encrypted_data.encode()).decode()
             encrypted_key_b64, encrypted_message = combined.split("|||")
-            
+
             # Decrypt symmetric key
             encrypted_key = base64.b64decode(encrypted_key_b64.encode())
             symmetric_key = private_key.decrypt(
@@ -194,7 +194,7 @@ class ZeroKnowledgeCrypto:
                     label=None
                 )
             )
-            
+
             # Decrypt message
             cipher_suite = Fernet(base64.urlsafe_b64encode(symmetric_key))
             decrypted = cipher_suite.decrypt(encrypted_message.encode())
@@ -210,7 +210,7 @@ class BlockchainService:
         """Create cryptographic hash for blockchain storage"""
         data = f"{message_id}:{sender_id}:{recipient_id}:{timestamp}"
         return hashlib.sha256(data.encode()).hexdigest()
-    
+
     @staticmethod
     def store_on_blockchain(data_hash, metadata=None):
         """Store hash on blockchain (simplified for demo)"""
@@ -223,25 +223,25 @@ class BlockchainService:
                 'metadata': metadata or {},
                 'block_id': secrets.token_hex(16)
             }
-            
+
             # Store in local "blockchain" file for demo
             blockchain_file = os.path.join(app.config['UPLOAD_FOLDER'], 'blockchain_records.json')
             records = []
-            
+
             if os.path.exists(blockchain_file):
                 with open(blockchain_file, 'r') as f:
                     records = json.load(f)
-            
+
             records.append(blockchain_record)
-            
+
             with open(blockchain_file, 'w') as f:
                 json.dump(records, f, indent=2)
-            
+
             return blockchain_record['block_id']
         except Exception as e:
             print(f"Blockchain storage error: {e}")
             return None
-    
+
     @staticmethod
     def verify_message_integrity(message_id, stored_hash):
         """Verify message hasn't been tampered with"""
@@ -249,10 +249,10 @@ class BlockchainService:
             blockchain_file = os.path.join(app.config['UPLOAD_FOLDER'], 'blockchain_records.json')
             if not os.path.exists(blockchain_file):
                 return False
-            
+
             with open(blockchain_file, 'r') as f:
                 records = json.load(f)
-            
+
             for record in records:
                 if record.get('hash') == stored_hash:
                     return True
@@ -268,7 +268,7 @@ class ExtendedEncryption:
         try:
             with open(file_path, 'rb') as f:
                 file_data = f.read()
-            
+
             if file_type == 'image':
                 return ExtendedEncryption._encrypt_image_advanced(file_data, public_key_pem)
             elif file_type == 'audio':
@@ -282,7 +282,7 @@ class ExtendedEncryption:
         except Exception as e:
             print(f"File encryption error: {e}")
             return None
-    
+
     @staticmethod
     def decrypt_file(encrypted_data, private_key_pem, file_type):
         """Decrypt files based on type"""
@@ -300,17 +300,17 @@ class ExtendedEncryption:
         except Exception as e:
             print(f"File decryption error: {e}")
             return None
-    
+
     @staticmethod
     def _encrypt_generic(file_data, public_key_pem):
         """Generic file encryption using hybrid method"""
         # Generate symmetric key
         symmetric_key = secrets.token_bytes(32)
         cipher_suite = Fernet(base64.urlsafe_b64encode(symmetric_key))
-        
+
         # Encrypt file data
         encrypted_data = cipher_suite.encrypt(file_data)
-        
+
         # Encrypt symmetric key with public key
         public_key = serialization.load_pem_public_key(
             public_key_pem.encode(), backend=default_backend()
@@ -323,21 +323,21 @@ class ExtendedEncryption:
                 label=None
             )
         )
-        
+
         # Combine and encode
         combined = {
             'encrypted_key': base64.b64encode(encrypted_key).decode(),
             'encrypted_data': encrypted_data.decode()
         }
         return base64.b64encode(json.dumps(combined).encode()).decode()
-    
+
     @staticmethod
     def _decrypt_generic(encrypted_data, private_key_pem):
         """Generic file decryption"""
         try:
             combined_data = json.loads(base64.b64decode(encrypted_data.encode()).decode())
             encrypted_key = base64.b64decode(combined_data['encrypted_key'].encode())
-            
+
             # Decrypt symmetric key
             private_key = serialization.load_pem_private_key(
                 private_key_pem.encode(), password=None, backend=default_backend()
@@ -350,7 +350,7 @@ class ExtendedEncryption:
                     label=None
                 )
             )
-            
+
             # Decrypt file data
             cipher_suite = Fernet(base64.urlsafe_b64encode(symmetric_key))
             decrypted_data = cipher_suite.decrypt(combined_data['encrypted_data'].encode())
@@ -358,50 +358,247 @@ class ExtendedEncryption:
         except Exception as e:
             print(f"Generic decryption error: {e}")
             return None
-    
+
     @staticmethod
     def _encrypt_image_advanced(image_data, public_key_pem):
         """Advanced image encryption with steganography"""
         # First encrypt normally
         encrypted = ExtendedEncryption._encrypt_generic(image_data, public_key_pem)
-        
+
         # Add steganography layer if needed
         return encrypted
-    
+
     @staticmethod
     def _decrypt_image_advanced(encrypted_data, private_key_pem):
         """Advanced image decryption"""
         return ExtendedEncryption._decrypt_generic(encrypted_data, private_key_pem)
-    
+
     @staticmethod
     def _encrypt_audio_advanced(audio_data, public_key_pem):
         """Advanced audio encryption with spectral hiding"""
         return ExtendedEncryption._encrypt_generic(audio_data, public_key_pem)
-    
+
     @staticmethod
     def _decrypt_audio_advanced(encrypted_data, private_key_pem):
         """Advanced audio decryption"""
         return ExtendedEncryption._decrypt_generic(encrypted_data, private_key_pem)
-    
+
     @staticmethod
     def _encrypt_video_advanced(video_data, public_key_pem):
         """Advanced video encryption"""
         return ExtendedEncryption._encrypt_generic(video_data, public_key_pem)
-    
+
     @staticmethod
     def _decrypt_video_advanced(encrypted_data, private_key_pem):
         """Advanced video decryption"""
         return ExtendedEncryption._decrypt_generic(encrypted_data, private_key_pem)
-    
+
     @staticmethod
     def _encrypt_document_advanced(document_data, public_key_pem):
         """Advanced document encryption with metadata protection"""
         return ExtendedEncryption._encrypt_generic(document_data, public_key_pem)
-    
+
     @staticmethod
     def _decrypt_document_advanced(encrypted_data, private_key_pem):
         """Advanced document decryption"""
         return ExtendedEncryption._decrypt_generic(encrypted_data, private_key_pem)
+
+# Device Fingerprinting Service
+class DeviceFingerprintService:
+    @staticmethod
+    def generate_device_id(request):
+        """Generate a unique device fingerprint based on request data"""
+        try:
+            # Get client information
+            user_agent = request.headers.get('User-Agent', '')
+            ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', ''))
+
+            # Create fingerprint components
+            fingerprint_data = {
+                'user_agent': user_agent,
+                'ip_address': ip_address,
+                'accept_language': request.headers.get('Accept-Language', ''),
+                'accept_encoding': request.headers.get('Accept-Encoding', ''),
+                'connection': request.headers.get('Connection', ''),
+                'upgrade_insecure_requests': request.headers.get('Upgrade-Insecure-Requests', ''),
+            }
+
+            # Create a hash of the fingerprint data
+            fingerprint_string = json.dumps(fingerprint_data, sort_keys=True)
+            device_id = hashlib.sha256(fingerprint_string.encode()).hexdigest()
+
+            return device_id, fingerprint_data
+        except Exception as e:
+            print(f"Error generating device ID: {e}")
+            # Fallback to a random device ID
+            return secrets.token_hex(32), {}
+
+    @staticmethod
+    def get_device_info(request):
+        """Extract device information from request"""
+        try:
+            user_agent = request.headers.get('User-Agent', '')
+            ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', ''))
+
+            # Parse browser info from user agent
+            browser_info = DeviceFingerprintService._parse_user_agent(user_agent)
+
+            return {
+                'user_agent': user_agent,
+                'ip_address': ip_address,
+                'browser_info': browser_info.get('browser', 'Unknown'),
+                'os_info': browser_info.get('os', 'Unknown'),
+                'language': request.headers.get('Accept-Language', '').split(',')[0] if request.headers.get('Accept-Language') else 'Unknown',
+                'timezone': request.headers.get('X-Timezone', 'Unknown')
+            }
+        except Exception as e:
+            print(f"Error getting device info: {e}")
+            return {
+                'user_agent': 'Unknown',
+                'ip_address': 'Unknown',
+                'browser_info': 'Unknown',
+                'os_info': 'Unknown',
+                'language': 'Unknown',
+                'timezone': 'Unknown'
+            }
+
+    @staticmethod
+    def _parse_user_agent(user_agent):
+        """Parse user agent string to extract browser and OS info"""
+        browser = 'Unknown'
+        os_info = 'Unknown'
+
+        try:
+            user_agent_lower = user_agent.lower()
+
+            # Browser detection
+            if 'chrome' in user_agent_lower and 'edge' not in user_agent_lower:
+                browser = 'Chrome'
+            elif 'firefox' in user_agent_lower:
+                browser = 'Firefox'
+            elif 'safari' in user_agent_lower and 'chrome' not in user_agent_lower:
+                browser = 'Safari'
+            elif 'edge' in user_agent_lower:
+                browser = 'Edge'
+            elif 'opera' in user_agent_lower:
+                browser = 'Opera'
+
+            # OS detection
+            if 'windows' in user_agent_lower:
+                os_info = 'Windows'
+            elif 'mac' in user_agent_lower:
+                os_info = 'macOS'
+            elif 'linux' in user_agent_lower:
+                os_info = 'Linux'
+            elif 'android' in user_agent_lower:
+                os_info = 'Android'
+            elif 'iphone' in user_agent_lower or 'ipad' in user_agent_lower:
+                os_info = 'iOS'
+
+        except Exception as e:
+            print(f"Error parsing user agent: {e}")
+
+        return {'browser': browser, 'os': os_info}
+
+    @staticmethod
+    def check_new_device(user_id, device_id):
+        """Check if this is a new device for the user"""
+        try:
+            existing_device = DeviceFingerprint.query.filter_by(
+                user_id=user_id,
+                device_id=device_id
+            ).first()
+
+            return existing_device is None
+        except Exception as e:
+            print(f"Error checking new device: {e}")
+            return True  # Assume new device on error
+
+    @staticmethod
+    def register_device(user_id, device_id, device_info, request):
+        """Register a new device for the user"""
+        try:
+            # Check if device already exists
+            existing_device = DeviceFingerprint.query.filter_by(
+                user_id=user_id,
+                device_id=device_id
+            ).first()
+
+            if existing_device:
+                # Update last seen
+                existing_device.last_seen = get_ist_time().replace(tzinfo=None)
+                existing_device.is_active = True
+                db.session.commit()
+                return existing_device, False  # Not a new device
+
+            # Create new device record
+            new_device = DeviceFingerprint(
+                user_id=user_id,
+                device_id=device_id,
+                device_name=f"{device_info.get('browser_info', 'Unknown')} on {device_info.get('os_info', 'Unknown')}",
+                user_agent=device_info.get('user_agent', ''),
+                ip_address=device_info.get('ip_address', ''),
+                browser_info=device_info.get('browser_info', ''),
+                os_info=device_info.get('os_info', ''),
+                language=device_info.get('language', ''),
+                timezone=device_info.get('timezone', ''),
+                is_trusted=False,
+                is_active=True
+            )
+
+            db.session.add(new_device)
+            db.session.commit()
+
+            return new_device, True  # New device
+
+        except Exception as e:
+            print(f"Error registering device: {e}")
+            return None, False
+
+    @staticmethod
+    def get_user_devices(user_id):
+        """Get all devices for a user"""
+        try:
+            return DeviceFingerprint.query.filter_by(user_id=user_id).order_by(DeviceFingerprint.last_seen.desc()).all()
+        except Exception as e:
+            print(f"Error getting user devices: {e}")
+            return []
+
+    @staticmethod
+    def mark_device_trusted(device_id, user_id):
+        """Mark a device as trusted"""
+        try:
+            device = DeviceFingerprint.query.filter_by(
+                id=device_id,
+                user_id=user_id
+            ).first()
+
+            if device:
+                device.is_trusted = True
+                db.session.commit()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error marking device as trusted: {e}")
+            return False
+
+    @staticmethod
+    def revoke_device(device_id, user_id):
+        """Revoke access for a device"""
+        try:
+            device = DeviceFingerprint.query.filter_by(
+                id=device_id,
+                user_id=user_id
+            ).first()
+
+            if device:
+                device.is_active = False
+                db.session.commit()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error revoking device: {e}")
+            return False
 
 # --- Credential parsing helper ---
 def _parse_credentials(req):
@@ -476,6 +673,23 @@ class MessageStatus(db.Model):
     status = db.Column(db.String(20), default='sent')  # sent, delivered, read
     timestamp = db.Column(db.DateTime, default=lambda: get_ist_time().replace(tzinfo=None))
 
+class DeviceFingerprint(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    device_id = db.Column(db.String(64), nullable=False)  # Unique device fingerprint
+    device_name = db.Column(db.String(100), nullable=True)  # User-friendly device name
+    user_agent = db.Column(db.Text, nullable=True)  # Browser user agent
+    ip_address = db.Column(db.String(45), nullable=True)  # IP address (IPv4/IPv6)
+    browser_info = db.Column(db.Text, nullable=True)  # Browser details
+    os_info = db.Column(db.String(100), nullable=True)  # Operating system
+    screen_resolution = db.Column(db.String(20), nullable=True)  # Screen resolution
+    timezone = db.Column(db.String(50), nullable=True)  # User timezone
+    language = db.Column(db.String(10), nullable=True)  # Browser language
+    is_trusted = db.Column(db.Boolean, default=False)  # User has marked as trusted
+    first_seen = db.Column(db.DateTime, default=lambda: get_ist_time().replace(tzinfo=None))
+    last_seen = db.Column(db.DateTime, default=lambda: get_ist_time().replace(tzinfo=None))
+    is_active = db.Column(db.Boolean, default=True)  # Device is currently active
+
 class RoomMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     room_id = db.Column(db.Integer, db.ForeignKey('chat_room.id'), nullable=False)
@@ -512,6 +726,8 @@ CHALLENGE_PHRASES = [
     "Speaker verification system enabled"
 ]
 
+# Voiceprint similarity threshold (higher is stricter). Override via env VOICE_SIMILARITY_THRESHOLD.
+VOICE_SIMILARITY_THRESHOLD = float(os.environ.get('VOICE_SIMILARITY_THRESHOLD', '0.90'))
 # Voice Authentication Functions (keeping existing ones)
 def convert_to_pcm_wav(input_file_path, output_file_path):
     """Convert audio file to 16-bit PCM WAV at 16kHz mono"""
@@ -527,12 +743,16 @@ def convert_to_pcm_wav(input_file_path, output_file_path):
         return False
 
 def extract_mfcc_features(audio_file_path):
-    """Extract MFCC features from audio file"""
+    """Extract robust MFCC-based speaker features"""
     try:
         y, sr = librosa.load(audio_file_path, sr=16000)
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
         mfcc_mean = np.mean(mfccs, axis=1)
-        return mfcc_mean.tolist()
+        mfcc_std = np.std(mfccs, axis=1)
+        delta = librosa.feature.delta(mfccs)
+        delta_mean = np.mean(delta, axis=1)
+        features = np.concatenate([mfcc_mean, mfcc_std, delta_mean])  # 60 dims
+        return features.tolist()
     except Exception as e:
         print(f"Error extracting MFCC features: {e}")
         return None
@@ -548,7 +768,7 @@ def transcribe_audio(audio_file_path):
         with sr.AudioFile(audio_file_path) as source:
             r.adjust_for_ambient_noise(source, duration=0.5)
             audio = r.record(source)
-        
+
         text = r.recognize_google(audio)
         return text.lower().strip()
     except sr.UnknownValueError:
@@ -564,38 +784,38 @@ def verify_challenge_phrase(spoken_text, expected_phrase):
     """Verify if spoken text matches the challenge phrase"""
     if not spoken_text or not expected_phrase:
         return False
-    
+
     spoken_clean = spoken_text.lower().strip().replace('.', '').replace(',', '')
     expected_clean = expected_phrase.lower().strip().replace('.', '').replace(',', '')
-    
+
     words_spoken = set(spoken_clean.split())
     words_expected = set(expected_clean.split())
-    
+
     overlap = len(words_spoken.intersection(words_expected))
     total_expected = len(words_expected)
-    
+
     return (overlap / total_expected) >= 0.8 if total_expected > 0 else False
 
-def compare_voice_features(stored_features, test_features, threshold=0.7):
+def compare_voice_features(stored_features, test_features,threshold=VOICE_SIMILARITY_THRESHOLD):
     """Compare two sets of MFCC features using cosine similarity"""
     try:
         stored_array = np.array(stored_features).reshape(1, -1)
         test_array = np.array(test_features).reshape(1, -1)
-        
+
         similarity = cosine_similarity(stored_array, test_array)[0][0]
         voice_match = similarity >= threshold
-        
+
         print(f"Voice feature comparison:")
         print(f"  Similarity: {similarity:.3f}")
         print(f"  Threshold: {threshold}")
         print(f"  Match: {voice_match}")
-        
+
         return voice_match, similarity
     except Exception as e:
         print(f"Error comparing voice features: {e}")
         return False, 0.0
 
-def perform_dual_verification(audio_file_path, stored_features, challenge_phrase, threshold=0.7):
+def perform_dual_verification(audio_file_path, stored_features, challenge_phrase, threshold=VOICE_SIMILARITY_THRESHOLD):
     """Perform both speech-to-text and voiceprint verification"""
     try:
         # Step 1: Speech-to-text
@@ -605,7 +825,7 @@ def perform_dual_verification(audio_file_path, stored_features, challenge_phrase
         # Step 2: Voiceprint extraction
         test_features = extract_mfcc_features(audio_file_path)
         if test_features is None:
-            return False, 0.0, spoken_text, False, False
+            return False, 0.0, spoken_text, False
 
         voice_match, similarity = compare_voice_features(stored_features, test_features, threshold)
 
@@ -620,10 +840,9 @@ def perform_dual_verification(audio_file_path, stored_features, challenge_phrase
         print(f"  Final decision: {'PASS' if dual_success else 'FAIL'}")
 
         return dual_success, similarity, spoken_text, text_match
-
     except Exception as e:
         print(f"Error in dual verification: {e}")
-        return False, 0.0, None, False, False
+        return False, 0.0, None, False
 
 # Steganography Functions (keeping existing ones)
 def encode_message_in_image(image_path, message):
@@ -631,15 +850,15 @@ def encode_message_in_image(image_path, message):
     try:
         img = Image.open(image_path)
         img = img.convert('RGB')
-        
+
         message += "<<<END>>>"
         binary_message = ''.join(format(ord(char), '08b') for char in message)
-        
+
         pixels = list(img.getdata())
         new_pixels = []
-        
+
         message_index = 0
-        
+
         for pixel in pixels:
             if message_index < len(binary_message):
                 r, g, b = pixel
@@ -648,10 +867,10 @@ def encode_message_in_image(image_path, message):
                 message_index += 1
             else:
                 new_pixels.append(pixel)
-        
+
         stego_img = Image.new('RGB', img.size)
         stego_img.putdata(new_pixels)
-        
+
         return stego_img
     except Exception as e:
         print(f"Error encoding message: {e}")
@@ -662,24 +881,24 @@ def decode_message_from_image(image_path):
     try:
         img = Image.open(image_path)
         img = img.convert('RGB')
-        
+
         pixels = list(img.getdata())
-        
+
         binary_message = ""
         for pixel in pixels:
             r, g, b = pixel
             binary_message += str(r & 1)
-        
+
         message = ""
         for i in range(0, len(binary_message), 8):
             byte = binary_message[i:i+8]
             if len(byte) == 8:
                 char = chr(int(byte, 2))
                 message += char
-                
+
                 if message.endswith("<<<END>>>"):
                     return message[:-9]
-        
+
         return "No hidden message found"
     except Exception as e:
         print(f"Error decoding message: {e}")
@@ -731,15 +950,45 @@ def login():
 
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
+            # Device fingerprinting
+            device_id, fingerprint_data = DeviceFingerprintService.generate_device_id(request)
+            device_info = DeviceFingerprintService.get_device_info(request)
+
+            # Check if this is a new device
+            is_new_device = DeviceFingerprintService.check_new_device(user.id, device_id)
+
+            # Register/update device
+            device, is_new = DeviceFingerprintService.register_device(user.id, device_id, device_info, request)
+
             session['user_id'] = user.id
             session['username'] = user.username
+            session['device_id'] = device_id
+            session['is_new_device'] = is_new_device
 
             user.is_online = True
             user.last_seen = get_ist_time().replace(tzinfo=None)
             db.session.commit()
 
             if request.is_json:
-                return jsonify({'success': True, 'redirect': url_for('index')})
+                response_data = {
+                    'success': True, 
+                    'redirect': url_for('index'),
+                    'new_device_alert': is_new_device,
+                    'device_info': {
+                        'browser': device_info.get('browser_info', 'Unknown'),
+                        'os': device_info.get('os_info', 'Unknown'),
+                        'ip': device_info.get('ip_address', 'Unknown')
+                    } if is_new_device else None
+                }
+                return jsonify(response_data)
+
+            # For form-based login, store device alert in session
+            if is_new_device:
+                session['device_alert'] = {
+                    'device_info': device_info,
+                    'timestamp': get_ist_time().replace(tzinfo=None).isoformat()
+                }
+
             return redirect(url_for('index'))
 
         if request.is_json:
@@ -895,7 +1144,7 @@ def get_messages(room_id):
         # Handle encrypted content for current user
         display_content = message.content  # Fallback to plain content
         encrypted_content = None
-        
+
         if message.encrypted_for_recipients:
             try:
                 recipient_encryptions = json.loads(message.encrypted_for_recipients)
@@ -939,14 +1188,14 @@ def get_messages(room_id):
             'blockchain_hash': message.blockchain_hash,
             'blockchain_verified': BlockchainService.verify_message_integrity(message.id, message.blockchain_hash) if message.blockchain_hash else False
         }
-        
+
         if message.message_type == 'file':
             base_data.update({
                 'file_name': message.file_name,
                 'file_size': message.file_size,
                 'file_type': message.file_type
             })
-        
+
         message_data.append(base_data)
 
     return jsonify(message_data)
@@ -986,7 +1235,7 @@ def start_chat(user_id):
 
     # Get sender info
     sender = User.query.get(session['user_id'])
-    
+
     # Send invitation notification to the receiver
     socketio.emit('chat_invitation', {
         'invitation_id': invitation.id,
@@ -1103,47 +1352,47 @@ def create_group():
 def upload_file():
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     if 'file' not in request.files or 'room_id' not in request.form:
         return jsonify({'error': 'File and room_id required'}), 400
-    
+
     file = request.files['file']
     room_id = int(request.form['room_id'])
     self_destruct_minutes = int(request.form.get('self_destruct_minutes', 0))
-    
+
     if file.filename == '' or not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
-    
+
     membership = RoomMember.query.filter_by(
         room_id=room_id,
         user_id=session['user_id']
     ).first()
-    
+
     if not membership:
         return jsonify({'error': 'Not authorized'}), 403
-    
+
     try:
         file_ext = file.filename.rsplit('.', 1)[1].lower()
         filename = secure_filename(f"chat_file_{session['user_id']}_{int(time.time())}.{file_ext}")
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
-        
+
         file_size = os.path.getsize(file_path)
         file_type = get_file_type(file.filename)
-        
+
         # Get room members for encryption
         room_members = RoomMember.query.filter_by(room_id=room_id).all()
         recipient_encryptions = {}
-        
+
         # Store the original file with a secure name for fallback access
         timestamp = int(time.time())
         secure_filename_stored = f"secure_{session['user_id']}_{timestamp}.{file_ext}"
         stored_file_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename_stored)
-        
+
         # Copy the file to secure storage before encryption
         import shutil
         shutil.copy2(file_path, stored_file_path)
-        
+
         # Encrypt file for each room member using Zero-Knowledge
         for member in room_members:
             user = User.query.get(member.user_id)
@@ -1155,12 +1404,12 @@ def upload_file():
                 except Exception as e:
                     print(f"Error encrypting file for user {user.id}: {e}")
                     # Continue with other users even if one fails
-        
+
         # Calculate self-destruct time
         self_destruct_time = None
         if self_destruct_minutes and self_destruct_minutes > 0:
             self_destruct_time = get_ist_time().replace(tzinfo=None) + timedelta(minutes=self_destruct_minutes)
-        
+
         # Create blockchain hash
         blockchain_hash = BlockchainService.create_message_hash(
             0,  # Will be set after message creation
@@ -1168,7 +1417,7 @@ def upload_file():
             room_id,
             time.time()
         )
-        
+
         # Create file message
         message = Message(
             content=secure_filename_stored,  # Store secure filename for fallback access
@@ -1184,12 +1433,12 @@ def upload_file():
         )
         db.session.add(message)
         db.session.commit()
-        
+
         # Update blockchain hash with actual message ID
         message.blockchain_hash = BlockchainService.create_message_hash(
             message.id, session['user_id'], room_id, message.timestamp.timestamp()
         )
-        
+
         # Store on blockchain
         block_id = BlockchainService.store_on_blockchain(
             message.blockchain_hash,
@@ -1199,17 +1448,17 @@ def upload_file():
                 'file_type': file_type
             }
         )
-        
+
         if block_id:
             message.blockchain_block_id = block_id
-        
+
         db.session.commit()
-        
+
         # Clean up temporary upload file
         os.remove(file_path)
-        
+
         sender = User.query.get(session['user_id'])
-        
+
         message_data = {
             'id': message.id,
             'content': filename,
@@ -1224,9 +1473,9 @@ def upload_file():
             'self_destruct_time': self_destruct_time.isoformat() if self_destruct_time else None,
             'blockchain_verified': True if block_id else False
         }
-        
+
         socketio.emit('new_message', message_data, room=f"room_{room_id}")
-        
+
         # Create delivery status
         for member in room_members:
             if member.user_id != session['user_id']:
@@ -1236,11 +1485,11 @@ def upload_file():
                     status='sent'
                 )
                 db.session.add(status)
-        
+
         db.session.commit()
-        
+
         return jsonify({'success': True, 'message_id': message.id})
-        
+
     except Exception as e:
         return jsonify({'error': f'Error uploading file: {str(e)}'}), 500
 
@@ -1249,20 +1498,20 @@ def upload_file():
 def download_file(message_id):
     if 'user_id' not in session:
         return "Not authenticated", 401
-    
+
     message = Message.query.get_or_404(message_id)
-    
+
     membership = RoomMember.query.filter_by(
         room_id=message.room_id,
         user_id=session['user_id']
     ).first()
-    
+
     if not membership:
         return "Not authorized", 403
-    
+
     if message.message_type != 'file':
         return "Not a file message", 400
-    
+
     try:
         # Check if file has encryption data
         if not message.encrypted_for_recipients:
@@ -1272,10 +1521,10 @@ def download_file(message_id):
                 return send_file(original_file_path, as_attachment=True, download_name=message.file_name)
             else:
                 return "File encryption data not found and original file missing", 404
-        
+
         recipient_encryptions = json.loads(message.encrypted_for_recipients)
         user_encrypted_file = recipient_encryptions.get(str(session['user_id']))
-        
+
         if not user_encrypted_file:
             # If user wasn't in original encryption, check if they're a room member now
             # and try to re-encrypt for them if original file exists
@@ -1284,7 +1533,7 @@ def download_file(message_id):
                 return send_file(original_file_path, as_attachment=True, download_name=message.file_name)
             else:
                 return "File not accessible - user was not included in original encryption", 403
-        
+
         # For demonstration, we'll attempt to decrypt the file server-side
         # In production, this would be done client-side with the user's private key
         try:
@@ -1292,12 +1541,12 @@ def download_file(message_id):
             if user and user.public_key:
                 # Since we don't have the private key server-side in a real Zero-Knowledge system,
                 # we'll create a temporary fallback for demo purposes
-                
+
                 # Try to find if there's a non-encrypted version we can serve
                 original_file_path = os.path.join(app.config['UPLOAD_FOLDER'], message.content)
                 if os.path.exists(original_file_path):
                     return send_file(original_file_path, as_attachment=True, download_name=message.file_name)
-                
+
                 # Otherwise, return encrypted data for client-side decryption
                 return jsonify({
                     'encrypted_file_data': user_encrypted_file,
@@ -1307,7 +1556,7 @@ def download_file(message_id):
                 })
             else:
                 return "User encryption keys not found", 404
-                
+
         except Exception as decrypt_error:
             print(f"Decryption error: {decrypt_error}")
             # Fallback to serving encrypted data
@@ -1317,7 +1566,7 @@ def download_file(message_id):
                 'file_type': message.file_type,
                 'message': 'File data encrypted - decryption failed, please contact support'
             })
-        
+
     except Exception as e:
         print(f"File download error: {e}")
         return f"Error downloading file: {str(e)}", 500
@@ -1327,35 +1576,44 @@ def download_file(message_id):
 def voice_register():
     if request.method == 'GET':
         return render_template('voice_register.html')
-    
+
     if 'user_id' not in session:
         return jsonify({'success': False, 'message': 'Please login first'}), 401
-    
+
     if 'voice_file' not in request.files:
         return jsonify({'success': False, 'message': 'No voice file uploaded'}), 400
-    
+
     file = request.files['voice_file']
     if file.filename == '' or not allowed_audio_file(file.filename):
         return jsonify({'success': False, 'message': 'Invalid audio file'}), 400
-    
+            # If updating an existing voice profile, require current password for privacy
+    user = User.query.get(session['user_id'])
+    # If updating an existing voice profile, require current password for privacy
+    user = User.query.get(session['user_id'])
+    voice_profile = VoiceProfile.query.filter_by(user_id=session['user_id']).first()
+    if voice_profile:
+        password = request.form.get('password')
+        if not password or not check_password_hash(user.password_hash, password):
+            return jsonify({'success': False, 'message': 'Password required or incorrect to update voice sample'}), 403
     try:
         original_filename = secure_filename(f"voice_upload_{session['user_id']}_{int(time.time())}.{file.filename.rsplit('.', 1)[1].lower()}")
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
         file.save(original_path)
-        
+
         wav_filename = secure_filename(f"voice_profile_{session['user_id']}_{int(time.time())}.wav")
         wav_path = os.path.join(app.config['UPLOAD_FOLDER'], wav_filename)
-        
+
         if not convert_to_pcm_wav(original_path, wav_path):
             os.remove(original_path)
             return jsonify({'success': False, 'message': 'Failed to convert audio to required format'}), 400
-        
+
         mfcc_features = extract_mfcc_features(wav_path)
         if mfcc_features is None:
             os.remove(original_path)
             os.remove(wav_path)
             return jsonify({'success': False, 'message': 'Failed to process audio file'}), 400
-        
+
+        # Save or update the user's voice profile with new MFCC features
         voice_profile = VoiceProfile.query.filter_by(user_id=session['user_id']).first()
         if voice_profile:
             voice_profile.mfcc_features = json.dumps(mfcc_features)
@@ -1366,12 +1624,12 @@ def voice_register():
                 mfcc_features=json.dumps(mfcc_features)
             )
             db.session.add(voice_profile)
-        
+
         db.session.commit()
-        
+
         os.remove(original_path)
         os.remove(wav_path)
-        
+
         return jsonify({'success': True, 'message': 'Voice profile created successfully.'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error processing voice: {str(e)}'}), 500
@@ -1381,20 +1639,20 @@ def get_challenge_phrase():
     username = request.json.get('username')
     if not username:
         return jsonify({'success': False, 'message': 'Username is required'}), 400
-    
+
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({'success': False, 'message': 'User not found'}), 404
-    
+
     voice_profile = VoiceProfile.query.filter_by(user_id=user.id).first()
     if not voice_profile:
         return jsonify({'success': False, 'message': 'No voice profile found for this user.'}), 404
-    
+
     challenge_phrase = generate_challenge_phrase()
-    
+
     session['challenge_phrase'] = challenge_phrase
     session['challenge_user_id'] = user.id
-    
+
     return jsonify({
         'success': True,
         'challenge_phrase': challenge_phrase,
@@ -1405,80 +1663,98 @@ def get_challenge_phrase():
 def voice_login():
     if request.method == 'GET':
         return render_template('voice_login.html')
-    
+
     if 'challenge_phrase' not in session or 'challenge_user_id' not in session:
         return jsonify({'success': False, 'message': 'No active challenge.'}), 400
-    
+
     if 'voice_file' not in request.files:
         return jsonify({'success': False, 'message': 'No voice file uploaded'}), 400
-    
+
     file = request.files['voice_file']
     if file.filename == '' or not allowed_audio_file(file.filename):
         return jsonify({'success': False, 'message': 'Invalid audio file'}), 400
-    
+
     try:
         user = User.query.get(session['challenge_user_id'])
         if not user:
             return jsonify({'success': False, 'message': 'User not found'}), 404
-        
+
         voice_profile = VoiceProfile.query.filter_by(user_id=user.id).first()
         if not voice_profile:
             return jsonify({'success': False, 'message': 'No voice profile found'}), 404
-        
+
         original_filename = secure_filename(f"voice_login_upload_{user.id}_{int(time.time())}.{file.filename.rsplit('.', 1)[1].lower()}")
         original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
         file.save(original_path)
-        
+
         wav_filename = secure_filename(f"voice_login_{user.id}_{int(time.time())}.wav")
         wav_path = os.path.join(app.config['UPLOAD_FOLDER'], wav_filename)
-        
+
         if not convert_to_pcm_wav(original_path, wav_path):
             os.remove(original_path)
             return jsonify({'success': False, 'message': 'Failed to convert audio'}), 400
-        
+
         stored_features = json.loads(voice_profile.mfcc_features)
         challenge_phrase = session['challenge_phrase']
-        
+
         dual_success, similarity, spoken_text, text_match = perform_dual_verification(
             wav_path, stored_features, challenge_phrase
         )
-        
+
         os.remove(original_path)
         os.remove(wav_path)
-        
+
         session.pop('challenge_phrase', None)
         session.pop('challenge_user_id', None)
-        
+
         if dual_success:
+            # Device fingerprinting for voice login
+            device_id, fingerprint_data = DeviceFingerprintService.generate_device_id(request)
+            device_info = DeviceFingerprintService.get_device_info(request)
+
+            # Check if this is a new device
+            is_new_device = DeviceFingerprintService.check_new_device(user.id, device_id)
+
+            # Register/update device
+            device, is_new = DeviceFingerprintService.register_device(user.id, device_id, device_info, request)
+
             session['user_id'] = user.id
             session['username'] = user.username
-            
+            session['device_id'] = device_id
+            session['is_new_device'] = is_new_device
+
             user.is_online = True
             user.last_seen = get_ist_time().replace(tzinfo=None)
             db.session.commit()
-            
-            return jsonify({
+
+            response_data = {
                 'success': True,
                 'message': f'Voice authentication successful! (Similarity: {similarity:.2%})',
-                'redirect': url_for('index')
-            })
+                'redirect': url_for('index'),
+                'new_device_alert': is_new_device,
+                'device_info': {
+                    'browser': device_info.get('browser_info', 'Unknown'),
+                    'os': device_info.get('os_info', 'Unknown'),
+                    'ip': device_info.get('ip_address', 'Unknown')
+                } if is_new_device else None
+            }
+
+            # Store device alert in session for form-based display
+            if is_new_device:
+                session['device_alert'] = {
+                    'device_info': device_info,
+                    'timestamp': get_ist_time().replace(tzinfo=None).isoformat()
+                }
+
+            return jsonify(response_data)
         else:
-            voice_match, voice_similarity = compare_voice_features(stored_features, json.loads(voice_profile.mfcc_features))
-            
-            if not text_match and not voice_match:
-                message = f'Authentication failed. Both phrase and voice pattern did not match. (Voice similarity: {similarity:.2%})'
-            elif not text_match:
-                message = f'Authentication failed. Spoken text did not match challenge phrase. (Voice similarity: {similarity:.2%})'
-            elif not voice_match:
-                message = f'Authentication failed. Voice pattern did not match. (Voice similarity: {similarity:.2%})'
-            else:
-                message = f'Authentication failed. (Voice similarity: {similarity:.2%})'
-            
-            return jsonify({
-                'success': False,
-                'message': message
-            }), 401
-            
+            message = f'Authentication failed. (Voice similarity: {similarity:.2%})'
+
+        return jsonify({
+            'success': False,
+            'message': message
+        }), 401
+
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error processing voice: {str(e)}'}), 500
 
@@ -1505,41 +1781,41 @@ def blockchain_verify():
 def encode_image():
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     if 'image_file' not in request.files or 'secret_message' not in request.form:
         return jsonify({'error': 'Image file and secret message are required'}), 400
-    
+
     file = request.files['image_file']
     message = request.form['secret_message']
-    
+
     if file.filename == '' or not allowed_image_file(file.filename):
         return jsonify({'error': 'Invalid image file'}), 400
-    
+
     if not message.strip():
         return jsonify({'error': 'Secret message cannot be empty'}), 400
-    
+
     try:
         filename = secure_filename(f"original_{session['user_id']}_{int(time.time())}.png")
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
-        
+
         stego_img = encode_message_in_image(file_path, message)
         if stego_img is None:
             os.remove(file_path)
             return jsonify({'error': 'Failed to encode message'}), 500
-        
+
         stego_filename = secure_filename(f"stego_{session['user_id']}_{int(time.time())}.png")
         stego_path = os.path.join(app.config['UPLOAD_FOLDER'], stego_filename)
         stego_img.save(stego_path, 'PNG')
-        
+
         os.remove(file_path)
-        
+
         return jsonify({
             'success': True,
             'message': 'Message encoded successfully!',
             'download_url': f'/download_stego/{stego_filename}'
         })
-        
+
     except Exception as e:
         return jsonify({'error': f'Error encoding message: {str(e)}'}), 500
 
@@ -1547,29 +1823,29 @@ def encode_image():
 def decode_image():
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     if 'image_file' not in request.files:
         return jsonify({'error': 'Image file is required'}), 400
-    
+
     file = request.files['image_file']
-    
+
     if file.filename == '' or not allowed_image_file(file.filename):
         return jsonify({'error': 'Invalid image file'}), 400
-    
+
     try:
         filename = secure_filename(f"decode_{session['user_id']}_{int(time.time())}.png")
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
-        
+
         hidden_message = decode_message_from_image(file_path)
-        
+
         os.remove(file_path)
-        
+
         return jsonify({
             'success': True,
             'hidden_message': hidden_message
         })
-        
+
     except Exception as e:
         return jsonify({'error': f'Error decoding message: {str(e)}'}), 500
 
@@ -1577,7 +1853,7 @@ def decode_image():
 def download_stego(filename):
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
+
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if os.path.exists(file_path):
         return send_file(file_path, as_attachment=True)
@@ -1589,53 +1865,58 @@ def send_stego_to_chat():
     """Send a steganography image directly to a chat room"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
-    data = request.get_json()
+
+    data = request.get_json(silent=True) or {}
     stego_filename = data.get('stego_filename')
-    room_id = data.get('room_id')
-    
-    if not stego_filename or not room_id:
+    room_id_raw = data.get('room_id')
+
+    if not stego_filename or room_id_raw is None:
         return jsonify({'error': 'Stego filename and room_id required'}), 400
-    
+
+    try:
+        room_id = int(room_id_raw)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid room_id'}), 400
+
     # Verify user has access to the room
     membership = RoomMember.query.filter_by(
         room_id=room_id,
         user_id=session['user_id']
     ).first()
-    
+
     if not membership:
         return jsonify({'error': 'Not authorized to send to this room'}), 403
-    
+
     try:
         # Extract the actual filename from the download URL
         actual_filename = stego_filename.split('/')[-1] if '/' in stego_filename else stego_filename
         stego_path = os.path.join(app.config['UPLOAD_FOLDER'], actual_filename)
-        
+
         if not os.path.exists(stego_path):
             return jsonify({'error': 'Steganography image not found'}), 404
-        
+
         # Get file size
         file_size = os.path.getsize(stego_path)
-        
+
         # Create a secure filename for the chat
         timestamp = int(time.time())
         secure_filename_stored = f"stego_chat_{session['user_id']}_{timestamp}.png"
         stored_file_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename_stored)
-        
+
         # Copy the stego image to chat storage
         import shutil
         shutil.copy2(stego_path, stored_file_path)
-        
+
         # Get room members for encryption
         room_members = RoomMember.query.filter_by(room_id=room_id).all()
         recipient_encryptions = {}
-        
+
         # For steganography images, store the filename for each user
         for member in room_members:
             user = User.query.get(member.user_id)
             if user:
                 recipient_encryptions[str(user.id)] = secure_filename_stored
-        
+
         # Create blockchain hash
         blockchain_hash = BlockchainService.create_message_hash(
             0,  # Will be updated after message creation
@@ -1643,7 +1924,7 @@ def send_stego_to_chat():
             room_id,
             time.time()
         )
-        
+
         # Create file message
         message = Message(
             content=secure_filename_stored,
@@ -1658,12 +1939,12 @@ def send_stego_to_chat():
         )
         db.session.add(message)
         db.session.commit()
-        
+
         # Update blockchain hash with actual message ID
         message.blockchain_hash = BlockchainService.create_message_hash(
             message.id, session['user_id'], room_id, message.timestamp.timestamp()
         )
-        
+
         # Store on blockchain
         block_id = BlockchainService.store_on_blockchain(
             message.blockchain_hash,
@@ -1673,14 +1954,14 @@ def send_stego_to_chat():
                 'file_type': 'image'
             }
         )
-        
+
         if block_id:
             message.blockchain_block_id = block_id
-        
+
         db.session.commit()
-        
+
         sender = User.query.get(session['user_id'])
-        
+
         message_data = {
             'id': message.id,
             'content': secure_filename_stored,
@@ -1694,9 +1975,9 @@ def send_stego_to_chat():
             'file_type': 'image',
             'blockchain_verified': True if block_id else False
         }
-        
+
         socketio.emit('new_message', message_data, room=f"room_{room_id}")
-        
+
         # Create delivery status
         for member in room_members:
             if member.user_id != session['user_id']:
@@ -1706,17 +1987,17 @@ def send_stego_to_chat():
                     status='sent'
                 )
                 db.session.add(status)
-        
+
         db.session.commit()
-        
+
         # Clean up the original stego file to save space
         try:
             os.remove(stego_path)
         except:
             pass  # Don't fail if cleanup fails
-        
+
         return jsonify({'success': True, 'message_id': message.id})
-        
+
     except Exception as e:
         print(f"Error sending stego image: {e}")
         return jsonify({'error': f'Error sending steganography image: {str(e)}'}), 500
@@ -1727,11 +2008,11 @@ def get_user_keys():
     """Get user's public key and encrypted private key"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     user = User.query.get(session['user_id'])
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
+
     return jsonify({
         'public_key': user.public_key,
         # In production, private key would be stored encrypted on client
@@ -1743,24 +2024,24 @@ def blockchain_status(message_id):
     """Check blockchain verification status of a message"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     message = Message.query.get(message_id)
     if not message:
         return jsonify({'error': 'Message not found'}), 404
-    
+
     # Check if user has access to this message
     membership = RoomMember.query.filter_by(
         room_id=message.room_id,
         user_id=session['user_id']
     ).first()
-    
+
     if not membership:
         return jsonify({'error': 'Not authorized'}), 403
-    
+
     verified = False
     if message.blockchain_hash:
         verified = BlockchainService.verify_message_integrity(message.id, message.blockchain_hash)
-    
+
     return jsonify({
         'message_id': message_id,
         'blockchain_hash': message.blockchain_hash,
@@ -1790,7 +2071,7 @@ def on_disconnect():
             user.is_online = False
             user.last_seen = get_ist_time().replace(tzinfo=None)
             db.session.commit()
-        print(f"User {session['username']} disconnected")
+        print(f"User {session.get('username', 'unknown')} disconnected")
 
 @socketio.on('join_room')
 def on_join_room(data):
@@ -1837,7 +2118,7 @@ def handle_message(data):
     # Get room members for Zero-Knowledge encryption
     room_members = RoomMember.query.filter_by(room_id=room_id).all()
     recipient_encryptions = {}
-    
+
     # Encrypt message for each room member using Zero-Knowledge
     for member in room_members:
         user = User.query.get(member.user_id)
@@ -1874,7 +2155,7 @@ def handle_message(data):
     message.blockchain_hash = BlockchainService.create_message_hash(
         message.id, session['user_id'], room_id, message.timestamp.timestamp()
     )
-    
+
     # Store on blockchain
     block_id = BlockchainService.store_on_blockchain(
         message.blockchain_hash,
@@ -1884,10 +2165,10 @@ def handle_message(data):
             'room_id': room_id
         }
     )
-    
+
     if block_id:
         message.blockchain_block_id = block_id
-    
+
     db.session.commit()
 
     sender = User.query.get(session['user_id'])
@@ -1984,7 +2265,7 @@ def mark_as_read(data):
                 if not member_status or member_status.status != 'read':
                     all_read = False
                     break
-        
+
         # Emit to the sender about read status change
         socketio.emit('message_status_update', {
             'message_id': message_id,
@@ -2009,7 +2290,7 @@ def cleanup_messages():
                 from sqlalchemy import inspect
                 inspector = inspect(db.engine)
                 message_columns = [column['name'] for column in inspector.get_columns('message')]
-                
+
                 if 'self_destruct_time' in message_columns:
                     expired_messages = Message.query.filter(
                         Message.self_destruct_time != None,
@@ -2032,11 +2313,102 @@ def cleanup_messages():
 
         time.sleep(60)
 
+# Device Management API Routes
+@app.route('/api/devices', methods=['GET'])
+def get_user_devices():
+    """Get all devices for the current user"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        devices = DeviceFingerprintService.get_user_devices(session['user_id'])
+        device_list = []
+
+        for device in devices:
+            device_list.append({
+                'id': device.id,
+                'device_name': device.device_name,
+                'browser_info': device.browser_info,
+                'os_info': device.os_info,
+                'ip_address': device.ip_address,
+                'is_trusted': device.is_trusted,
+                'is_active': device.is_active,
+                'first_seen': device.first_seen.isoformat(),
+                'last_seen': device.last_seen.isoformat(),
+                'is_current': device.device_id == session.get('device_id')
+            })
+
+        return jsonify({'devices': device_list})
+    except Exception as e:
+        return jsonify({'error': f'Error getting devices: {str(e)}'}), 500
+
+@app.route('/api/devices/<int:device_id>/trust', methods=['POST'])
+def trust_device(device_id):
+    """Mark a device as trusted"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        success = DeviceFingerprintService.mark_device_trusted(device_id, session['user_id'])
+        if success:
+            return jsonify({'success': True, 'message': 'Device marked as trusted'})
+        else:
+            return jsonify({'error': 'Device not found or not authorized'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Error trusting device: {str(e)}'}), 500
+
+@app.route('/api/devices/<int:device_id>/revoke', methods=['POST'])
+def revoke_device(device_id):
+    """Revoke access for a device"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        success = DeviceFingerprintService.revoke_device(device_id, session['user_id'])
+        if success:
+            return jsonify({'success': True, 'message': 'Device access revoked'})
+        else:
+            return jsonify({'error': 'Device not found or not authorized'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Error revoking device: {str(e)}'}), 500
+
+@app.route('/api/device_alert', methods=['GET'])
+def get_device_alert():
+    """Get device alert information if available"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    device_alert = session.get('device_alert')
+    if device_alert:
+        # Clear the alert after retrieving it
+        session.pop('device_alert', None)
+        return jsonify({'alert': device_alert})
+
+    return jsonify({'alert': None})
+
+@app.route('/api/device_alert/dismiss', methods=['POST'])
+def dismiss_device_alert():
+    """Dismiss the current device alert"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    session.pop('device_alert', None)
+    session.pop('is_new_device', None)
+
+    return jsonify({'success': True, 'message': 'Device alert dismissed'})
+
+@app.route('/device_management')
+def device_management():
+    """Device management page"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    return render_template('device_management.html')
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
 
     cleanup_thread = threading.Thread(target=cleanup_messages, daemon=True)
     cleanup_thread.start()
-
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT',5000)),debug=True)
